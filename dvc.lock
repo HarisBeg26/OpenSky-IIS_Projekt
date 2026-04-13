@@ -9,12 +9,12 @@ stages:
       size: 1976
     - path: params.yaml
       hash: md5
-      md5: c4e5bb2477595c56e1bed81882b11aba
-      size: 222
+      md5: a177bf0913f79cc19190801d67cb0ed2
+      size: 211
     - path: src/data/fetch_opensky_data.py
       hash: md5
-      md5: 313581e2aa31b82ad0a694a93809206e
-      size: 2304
+      md5: e25a7f3ffa4321105d26cf6e771e5f17
+      size: 2238
     params:
       params.yaml:
         fetch.output_dir: data/raw
@@ -22,29 +22,29 @@ stages:
     outs:
     - path: data/raw
       hash: md5
-      md5: 6bca1c0295df2dd880232cab4ae387af.dir
-      size: 10989949
-      nfiles: 4
+      md5: 522a093c36963bf49b90d12de4b01d53.dir
+      size: 13723402
+      nfiles: 5
   preprocess:
     cmd: uv run python main.py preprocess
     deps:
     - path: data/raw
       hash: md5
-      md5: 6bca1c0295df2dd880232cab4ae387af.dir
-      size: 10989949
-      nfiles: 4
+      md5: 522a093c36963bf49b90d12de4b01d53.dir
+      size: 13723402
+      nfiles: 5
     - path: main.py
       hash: md5
       md5: ea38ae95f83cc29cb4ea25c937209e72
       size: 1976
     - path: params.yaml
       hash: md5
-      md5: c4e5bb2477595c56e1bed81882b11aba
-      size: 222
+      md5: a177bf0913f79cc19190801d67cb0ed2
+      size: 211
     - path: src/data/preprocess_opensky_data.py
       hash: md5
-      md5: 62ec65ffd5cce698192d7e68d600f4f1
-      size: 6205
+      md5: 39de5271c69d94eac5809bc2b6a1b4c2
+      size: 6019
     params:
       params.yaml:
         preprocess.format: csv
@@ -53,29 +53,29 @@ stages:
     outs:
     - path: data/processed
       hash: md5
-      md5: 3845eaeec16f588219970fe1828f9183.dir
-      size: 14934350
-      nfiles: 6
+      md5: bc7a63378fdd3096ac3ceb65564b6599.dir
+      size: 18816386
+      nfiles: 7
   validate:
     cmd: uv run python main.py validate
     deps:
     - path: data/processed
       hash: md5
-      md5: 3845eaeec16f588219970fe1828f9183.dir
-      size: 14934350
-      nfiles: 6
+      md5: bc7a63378fdd3096ac3ceb65564b6599.dir
+      size: 18816386
+      nfiles: 7
     - path: main.py
       hash: md5
       md5: ea38ae95f83cc29cb4ea25c937209e72
       size: 1976
     - path: params.yaml
       hash: md5
-      md5: c4e5bb2477595c56e1bed81882b11aba
-      size: 222
+      md5: a177bf0913f79cc19190801d67cb0ed2
+      size: 211
     - path: src/data/validate_opensky_data.py
       hash: md5
-      md5: f73079ac5772acf2808903ac70f32a1e
-      size: 3857
+      md5: eb360dba431776997363ae83f3dd79fb
+      size: 3740
     params:
       params.yaml:
         validate.processed_dir: data/processed
