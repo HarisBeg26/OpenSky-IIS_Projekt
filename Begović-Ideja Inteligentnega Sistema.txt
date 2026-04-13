@@ -1,0 +1,26 @@
+Ideja inteligentnega sistema
+MAG 1. IPT
+Avtor:  Haris Begovi?
+
+
+
+Vizija inteligentnega sistema:
+SkyWatch je inteligentni sistem za nadzor in analizo prometa lahkih letal in jadralnih letal v realnem ?asu na podlagi podatkov OpenSky Network API. Sistem naslavlja dva klju?na problema: 
+1. Zaznavanje anomalij v letu kot so: nenavadne spremembe višine, hitrosti ali smeri, ki bi lahko nakazovale nevarno situacijo
+2. Napovedovanje kategorije letala glede na zna?ilnosti poleta
+Sistem je namenjen malim letališ?em, zasebnim pilotom in varnostnim službam, ki želijo v?asno zaznati nepravilnosti v lokalnem zra?nem prostoru. Podatkovni vir OpenSky Network zagotavlja neprekinjen tok svežih ADS-B podatkov (state vectors) vsakih 30 sekund, kar omogo?a zanesljivo in aktualno osnovo za u?enje ter produkcijsko delovanje modelov. 
+
+
+Podatki o inteligentnem sistemu
+Klju?ni uporabniki
+Zasebni piloti in lastniki lahkih letal, operaterji malih letališ?, varnostne in reševalne službe v zra?nem prostoru, raziskovalci letalske varnosti ter navdušenci nad letalskim prometom.Glavne funkcionalnosti
+Sistem vklju?uje naslednje glavne funkcionalnosti:
+1. Avtomatizirani zajem podatkov iz OpenSky Network REST API (state vectors: pozicija, višina, hitrost, vertikalna hitrost, smerni kot) s cevovodom Apache Airflow ali Prefect, s sledenjem verzij podatkov z DVC in DagsHub.
+2. Avtomatizirano validiranje in testiranje podatkov z Great Expectations, preverjanje sheme, manjkajo?ih vrednosti, vrednosti izven obsega in kakovosti posameznih polj.
+3. Napovedni model 1 (lastno nau?en – nevronska mreža LSTM): Zaznavanje anomalij v trajektoriji poleta. Model se u?i na zgodovinskih state vector sekvencah in v realnem ?asu napoveduje ali trenutna trajektorija odstopa od normalnega vzorca. Sledenje eksperimentom poteka z MLflow.
+4. Napovedni model 2 (predna?en model iz HuggingFace): Klasifikacija tipa letala (jadralno letalo, lahko motorno letalo, helikopter, drone) na podlagi zna?ilnosti poleta. Uporabljen bo predna?en tabularni klasifikacijski model (npr. TabTransformer ali SAINT), prilagojen na naš nabor podatkov.
+5. Cevovod samodejne izgradnje Docker slik (GitHub Actions) in namestitev v produkcijo. Nadzorna ploš?a za administratorje z vpogledom v ovrednotenje modelov, sledenje eksperimentov, register modelov ter migracijo modelov med stanji (Staging/Production/Archived).Omejitve izdelka / storitve
+Sistem je omejen na obmo?ja, ki jih pokriva OpenSky Network (dobra pokritost v Evropi in Severni Ameriki, slaba v odmaknjenih podro?jih). Zaznavanje anomalij je omejeno na letala z delujo?im ADS-B oddajnikom. Latenca API klicov je do 30 sekund, kar pomeni, da sistem ni primeren za aplikacije, ki zahtevajo takojnje (sub-sekundne) odzivne ?ase. Brezpla?ni API dostop je omejen na 400 klicev na minuto.Uporabniški vmesnik(i)
+(npr. mobilni, spletni, namizni)Spletni uporabniški vmesnik (React + Leaflet.js): interaktivni zemljevid v realnem ?asu z ozna?enimi leti in barvnimi indikatorji stanja (normalno / anomalija). Ob kliku na letalo se prikažejo podrobnosti, napoved modela in zaupanja. Administratorski pogled (lo?en portal) vklju?uje nadzorno ploš?o za ovrednotenje modelov, sledenje eksperimentov (Mlflow UI), register modelov ter poro?ila testiranja in validiranja podatkov.Planirane integracije
+(npr. sistemi za overjanje, sistemi za shranjevanje vsebin na oblaku, napovednimi modeli v oblaku, zunanjimi viri podatkov ipd.)OpenSky Network REST API (zunanji vir podatkov v realnem ?asu); DagsHub (verzioniranje podatkov z DVC in sledenje eksperimentov z Mlflow); HuggingFace Hub (predna?en model); GitHub Actions (CI/CD cevovod za izgradnjo Docker slik); Docker Hub ali GitHub Container Registry (shranjevanje slik); PostgreSQL baza podatkov (shranjevanje zabeleženih letov in napovedi)Zagotavljanje trajnosti podatkom
+(npr. relacijska baza podatkov, NoSql baza, blockchain platforma, PB v oblaku, trajnosti podatkov ne bo ipd.)Relacijska baza podatkov PostgreSQL za shranjevanje zajetih state vectors, rezultatov napovedi modelov in revizijskih dnevnikov. Surovine podatkovne datoteke (CSV/Parquet) se verzionirajo z DVC in shranjujejo v oddaljeni shrambi (DagsHub). Nau?eni modeli se verzionirajo v Mlflow Model Registry.

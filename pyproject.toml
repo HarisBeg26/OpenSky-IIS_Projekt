@@ -1,0 +1,22 @@
+[project]
+name = "opensky-iis-projekt"
+version = "0.1.0"
+description = "MLOps project for predicting flight path for gliders and light aircrafts"
+author = "Haris Begović"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.135.1",
+    "great-expectations>=1.15.1",
+    "mlflow>=1.27.0",
+    "numpy>=2.4.3",
+    "pandas>=3.0.1",
+    "psycopg[binary]>=3.3.3",
+    "pyarrow>=23.0.1",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.2",
+    "requests>=2.32.5",
+    "scikit-learn>=1.8.0",
+    "sqlalchemy>=2.0.48",
+    "uvicorn>=0.42.0",
+]

@@ -1,0 +1,57 @@
+name: Fetch OpenSky Data On Schedule
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  fetch_opensky:
+    name: Fetch, preprocess, and validate OpenSky data
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN || github.token }}
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run ingest
+        env:
+          OPENSKY_USERNAME: ${{ secrets.OPENSKY_USERNAME }}
+          OPENSKY_PASSWORD: ${{ secrets.OPENSKY_PASSWORD }}
+          OPENSKY_URL: ${{ vars.OPENSKY_URL }}
+        run: uv run python main.py ingest
+
+      - name: Run preprocess
+        run: uv run python main.py preprocess --format csv
+
+      - name: Run validate
+        run: uv run python main.py validate
+
+      - name: Commit updated data
+        run: |
+          git add data/raw data/processed
+          if git diff --cached --quiet; then
+            echo "No data changes to commit"
+            exit 0
+          fi
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git commit -m "chore(data): update OpenSky snapshots and processed history"
+          git push
