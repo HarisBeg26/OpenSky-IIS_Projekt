@@ -1,16 +1,16 @@
-name: Fetch OpenSky Data On Schedule
+name: Fetch data on schedule
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "0 0 * * *"
 
 permissions:
   contents: write
 
 jobs:
   fetch_opensky:
-    name: Fetch, preprocess, and validate OpenSky data
+    name: Fetch and pre-process OpenSky data
     runs-on: ubuntu-latest
 
     steps:
@@ -31,27 +31,43 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Run ingest
+      - name: Setup Git
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+
+      - name: DVC setup remote
+        env:
+          DAGSHUB_S3_ENDPOINT_URL: ${{ vars.DAGSHUB_S3_ENDPOINT_URL }}
+          DAGSHUB_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_ACCESS_KEY_ID }}
+          DAGSHUB_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -n "$DAGSHUB_S3_ENDPOINT_URL" ]; then
+            uv run dvc remote add -d origin s3://dvc --force
+            uv run dvc remote modify origin endpointurl "$DAGSHUB_S3_ENDPOINT_URL"
+            uv run dvc remote modify origin --local access_key_id "$DAGSHUB_ACCESS_KEY_ID"
+            uv run dvc remote modify origin --local secret_access_key "$DAGSHUB_SECRET_ACCESS_KEY"
+          else
+            echo "DAGSHUB_S3_ENDPOINT_URL is not set. Skipping remote setup."
+          fi
+
+      - name: Run DVC pipeline
         env:
           OPENSKY_USERNAME: ${{ secrets.OPENSKY_USERNAME }}
           OPENSKY_PASSWORD: ${{ secrets.OPENSKY_PASSWORD }}
           OPENSKY_URL: ${{ vars.OPENSKY_URL }}
-        run: uv run python main.py ingest
-
-      - name: Run preprocess
-        run: uv run python main.py preprocess --format csv
-
-      - name: Run validate
-        run: uv run python main.py validate
-
-      - name: Commit updated data
+          DAGSHUB_S3_ENDPOINT_URL: ${{ vars.DAGSHUB_S3_ENDPOINT_URL }}
+          DAGSHUB_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_ACCESS_KEY_ID }}
+          DAGSHUB_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_SECRET_ACCESS_KEY }}
         run: |
-          git add data/raw data/processed
-          if git diff --cached --quiet; then
-            echo "No data changes to commit"
-            exit 0
-          fi
-          git config --local user.email "actions@github.com"
-          git config --local user.name "GitHub Actions"
-          git commit -m "chore(data): update OpenSky snapshots and processed history"
-          git push
+          uv run dvc pull
+          uv run dvc status
+          uv run dvc repro
+          uv run dvc push
+          git add dvc.lock
+          git commit -m "Update dvc.lock on `date` with GitHub Actions" || true
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.PAT_TOKEN }}

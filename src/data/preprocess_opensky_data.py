@@ -5,6 +5,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+import yaml
+
+DEFAULT_RAW_DIR = "data/raw"
+DEFAULT_PROCESSED_DIR = "data/processed"
+DEFAULT_FORMAT = "csv"
 
 STATE_COLUMNS = [
     "icao24",
@@ -25,6 +30,25 @@ STATE_COLUMNS = [
     "spi",
     "position_source",
 ]
+
+
+def _load_preprocess_params(params_path: str = "params.yaml") -> dict:
+    defaults = {
+        "raw_dir": DEFAULT_RAW_DIR,
+        "output_dir": DEFAULT_PROCESSED_DIR,
+        "format": DEFAULT_FORMAT,
+    }
+    params_file = Path(params_path)
+    if not params_file.exists():
+        return defaults
+
+    loaded = yaml.safe_load(params_file.read_text(encoding="utf-8")) or {}
+    preprocess_params = loaded.get("preprocess", {}) if isinstance(loaded, dict) else {}
+    return {
+        "raw_dir": preprocess_params.get("raw_dir", defaults["raw_dir"]),
+        "output_dir": preprocess_params.get("output_dir", defaults["output_dir"]),
+        "format": preprocess_params.get("format", defaults["format"]),
+    }
 
 
 def _latest_snapshot(raw_dir: Path) -> Path:
@@ -73,13 +97,66 @@ def _flatten_states(payload: dict) -> pd.DataFrame:
     return df
 
 
+def _resolve_preprocess_config(raw_dir: str, output_dir: str, output_format: str) -> tuple[str, str, str]:
+    params = _load_preprocess_params()
+    effective_raw_dir = raw_dir if raw_dir != DEFAULT_RAW_DIR else params["raw_dir"]
+    effective_output_dir = output_dir if output_dir != DEFAULT_PROCESSED_DIR else params["output_dir"]
+    effective_output_format = output_format if output_format != DEFAULT_FORMAT else params["format"]
+    return effective_raw_dir, effective_output_dir, effective_output_format
+
+
+def _save_snapshot_and_get_history_paths(df: pd.DataFrame, out_dir: Path, output_format: str, ts: str) -> tuple[Path, Path]:
+    if output_format == "parquet":
+        out_path = out_dir / f"states_processed_{ts}.parquet"
+        df.to_parquet(out_path, index=False)
+        return out_path, out_dir / "states_history.parquet"
+
+    out_path = out_dir / f"states_processed_{ts}.csv"
+    df.to_csv(out_path, index=False)
+    return out_path, out_dir / "states_history.csv"
+
+
+def _update_history(df: pd.DataFrame, history_path: Path) -> pd.DataFrame:
+    if history_path.exists():
+        if history_path.suffix.lower() == ".parquet":
+            existing = pd.read_parquet(history_path)
+        else:
+            existing = pd.read_csv(history_path)
+        combined = pd.concat([existing, df], ignore_index=True)
+    else:
+        combined = df.copy()
+
+    dedupe_keys = ["icao24", "last_contact", "time_position"]
+    available_keys = [col for col in dedupe_keys if col in combined.columns]
+    if available_keys:
+        combined = combined.drop_duplicates(subset=available_keys, keep="last")
+    else:
+        combined = combined.drop_duplicates(keep="last")
+
+    if "last_contact" in combined.columns:
+        combined = combined.sort_values(by="last_contact", kind="stable")
+
+    if history_path.suffix.lower() == ".parquet":
+        combined.to_parquet(history_path, index=False)
+    else:
+        combined.to_csv(history_path, index=False)
+
+    return combined
+
+
 def preprocess_opensky_data(
-    raw_dir: str = "data/raw",
-    output_dir: str = "data/processed",
-    output_format: str = "csv",
+    raw_dir: str = DEFAULT_RAW_DIR,
+    output_dir: str = DEFAULT_PROCESSED_DIR,
+    output_format: str = DEFAULT_FORMAT,
 ) -> int:
     try:
-        raw_path = _latest_snapshot(Path(raw_dir))
+        effective_raw_dir, effective_output_dir, effective_output_format = _resolve_preprocess_config(
+            raw_dir,
+            output_dir,
+            output_format,
+        )
+
+        raw_path = _latest_snapshot(Path(effective_raw_dir))
         payload = json.loads(raw_path.read_text(encoding="utf-8"))
         df = _flatten_states(payload)
 
@@ -87,43 +164,17 @@ def preprocess_opensky_data(
             print("Preprocess finished, but no records were found.")
             return 1
 
-        out_dir = Path(output_dir)
+        out_dir = Path(effective_output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
-        if output_format == "parquet":
-            out_path = out_dir / f"states_processed_{ts}.parquet"
-            df.to_parquet(out_path, index=False)
-            history_path = out_dir / "states_history.parquet"
-        else:
-            out_path = out_dir / f"states_processed_{ts}.csv"
-            df.to_csv(out_path, index=False)
-            history_path = out_dir / "states_history.csv"
-
-        # Keep a cumulative history dataset that is updated on each preprocess run.
-        if history_path.exists():
-            if history_path.suffix.lower() == ".parquet":
-                existing = pd.read_parquet(history_path)
-            else:
-                existing = pd.read_csv(history_path)
-            combined = pd.concat([existing, df], ignore_index=True)
-        else:
-            combined = df.copy()
-
-        dedupe_keys = ["icao24", "last_contact", "time_position"]
-        available_keys = [col for col in dedupe_keys if col in combined.columns]
-        if available_keys:
-            combined = combined.drop_duplicates(subset=available_keys, keep="last")
-        else:
-            combined = combined.drop_duplicates(keep="last")
-
-        if "last_contact" in combined.columns:
-            combined = combined.sort_values(by="last_contact", kind="stable")
-
-        if history_path.suffix.lower() == ".parquet":
-            combined.to_parquet(history_path, index=False)
-        else:
-            combined.to_csv(history_path, index=False)
+        out_path, history_path = _save_snapshot_and_get_history_paths(
+            df,
+            out_dir,
+            effective_output_format,
+            ts,
+        )
+        combined = _update_history(df, history_path)
 
         print(f"Loaded raw snapshot: {raw_path}")
         print(f"Saved processed dataset: {out_path}")

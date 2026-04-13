@@ -1,0 +1,81 @@
+schema: '2.0'
+stages:
+  fetch:
+    cmd: uv run python main.py ingest
+    deps:
+    - path: main.py
+      hash: md5
+      md5: ea38ae95f83cc29cb4ea25c937209e72
+      size: 1976
+    - path: params.yaml
+      hash: md5
+      md5: c4e5bb2477595c56e1bed81882b11aba
+      size: 222
+    - path: src/data/fetch_opensky_data.py
+      hash: md5
+      md5: 313581e2aa31b82ad0a694a93809206e
+      size: 2304
+    params:
+      params.yaml:
+        fetch.output_dir: data/raw
+        fetch.url: https://opensky-network.org/api/states/all
+    outs:
+    - path: data/raw
+      hash: md5
+      md5: 6bca1c0295df2dd880232cab4ae387af.dir
+      size: 10989949
+      nfiles: 4
+  preprocess:
+    cmd: uv run python main.py preprocess
+    deps:
+    - path: data/raw
+      hash: md5
+      md5: 6bca1c0295df2dd880232cab4ae387af.dir
+      size: 10989949
+      nfiles: 4
+    - path: main.py
+      hash: md5
+      md5: ea38ae95f83cc29cb4ea25c937209e72
+      size: 1976
+    - path: params.yaml
+      hash: md5
+      md5: c4e5bb2477595c56e1bed81882b11aba
+      size: 222
+    - path: src/data/preprocess_opensky_data.py
+      hash: md5
+      md5: 62ec65ffd5cce698192d7e68d600f4f1
+      size: 6205
+    params:
+      params.yaml:
+        preprocess.format: csv
+        preprocess.output_dir: data/processed
+        preprocess.raw_dir: data/raw
+    outs:
+    - path: data/processed
+      hash: md5
+      md5: 3845eaeec16f588219970fe1828f9183.dir
+      size: 14934350
+      nfiles: 6
+  validate:
+    cmd: uv run python main.py validate
+    deps:
+    - path: data/processed
+      hash: md5
+      md5: 3845eaeec16f588219970fe1828f9183.dir
+      size: 14934350
+      nfiles: 6
+    - path: main.py
+      hash: md5
+      md5: ea38ae95f83cc29cb4ea25c937209e72
+      size: 1976
+    - path: params.yaml
+      hash: md5
+      md5: c4e5bb2477595c56e1bed81882b11aba
+      size: 222
+    - path: src/data/validate_opensky_data.py
+      hash: md5
+      md5: f73079ac5772acf2808903ac70f32a1e
+      size: 3857
+    params:
+      params.yaml:
+        validate.processed_dir: data/processed

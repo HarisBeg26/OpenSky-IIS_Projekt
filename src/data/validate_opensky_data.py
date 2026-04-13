@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import yaml
+
+DEFAULT_PROCESSED_DIR = "data/processed"
 
 
 def _latest_processed(processed_dir: Path) -> Path:
@@ -21,6 +24,17 @@ def _latest_processed(processed_dir: Path) -> Path:
     if not candidates:
         raise FileNotFoundError(f"No processed files found in {processed_dir}")
     return candidates[-1]
+
+
+def _load_validate_params(params_path: str = "params.yaml") -> dict:
+    defaults = {"processed_dir": DEFAULT_PROCESSED_DIR}
+    params_file = Path(params_path)
+    if not params_file.exists():
+        return defaults
+
+    loaded = yaml.safe_load(params_file.read_text(encoding="utf-8")) or {}
+    validate_params = loaded.get("validate", {}) if isinstance(loaded, dict) else {}
+    return {"processed_dir": validate_params.get("processed_dir", defaults["processed_dir"]) }
 
 
 def _load_dataframe(path: Path) -> pd.DataFrame:
@@ -70,10 +84,12 @@ def _append_negative_issue(df: pd.DataFrame, column: str, issues: list[str]) -> 
 
 def validate_opensky_data(
     input_file: str | None = None,
-    processed_dir: str = "data/processed",
+    processed_dir: str = DEFAULT_PROCESSED_DIR,
 ) -> int:
     try:
-        path = Path(input_file) if input_file else _latest_processed(Path(processed_dir))
+        params = _load_validate_params()
+        effective_processed_dir = processed_dir if processed_dir != DEFAULT_PROCESSED_DIR else params["processed_dir"]
+        path = Path(input_file) if input_file else _latest_processed(Path(effective_processed_dir))
 
         df = _load_dataframe(path)
 

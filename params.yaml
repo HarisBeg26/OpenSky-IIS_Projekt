@@ -1,0 +1,11 @@
+fetch:
+  url: "https://opensky-network.org/api/states/all"
+  output_dir: "data/raw"
+
+preprocess:
+  raw_dir: "data/raw"
+  output_dir: "data/processed"
+  format: "csv"
+
+validate:
+  processed_dir: "data/processed"
