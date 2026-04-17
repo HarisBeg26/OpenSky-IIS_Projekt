@@ -22,17 +22,17 @@ stages:
     outs:
     - path: data/raw
       hash: md5
-      md5: f7e5b168e93fe70cd38c413595bde47a.dir
-      size: 17394187
-      nfiles: 7
+      md5: e3c278dc03d7532a8afe96b19706cfec.dir
+      size: 19462011
+      nfiles: 8
   preprocess:
     cmd: uv run python main.py preprocess
     deps:
     - path: data/raw
       hash: md5
-      md5: f7e5b168e93fe70cd38c413595bde47a.dir
-      size: 17394187
-      nfiles: 7
+      md5: e3c278dc03d7532a8afe96b19706cfec.dir
+      size: 19462011
+      nfiles: 8
     - path: main.py
       hash: md5
       md5: ea38ae95f83cc29cb4ea25c937209e72
@@ -53,17 +53,17 @@ stages:
     outs:
     - path: data/processed
       hash: md5
-      md5: a3f3811e73da5682e87d047f77441349.dir
-      size: 24079057
-      nfiles: 9
+      md5: 58954a74afb9a760800052baef30d7e9.dir
+      size: 27041332
+      nfiles: 10
   validate:
     cmd: uv run python main.py validate
     deps:
     - path: data/processed
       hash: md5
-      md5: a3f3811e73da5682e87d047f77441349.dir
-      size: 24079057
-      nfiles: 9
+      md5: 58954a74afb9a760800052baef30d7e9.dir
+      size: 27041332
+      nfiles: 10
     - path: main.py
       hash: md5
       md5: ea38ae95f83cc29cb4ea25c937209e72
