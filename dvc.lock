@@ -28,17 +28,17 @@ stages:
     outs:
     - path: data/raw
       hash: md5
-      md5: 69393787101bfd7c9dda61a55cbce007.dir
-      size: 34269291
-      nfiles: 18
+      md5: 6fe2f3140dfb3277b26b8380c5a29210.dir
+      size: 34290138
+      nfiles: 19
   preprocess:
     cmd: uv run python main.py preprocess
     deps:
     - path: data/raw
       hash: md5
-      md5: 69393787101bfd7c9dda61a55cbce007.dir
-      size: 34269291
-      nfiles: 18
+      md5: 6fe2f3140dfb3277b26b8380c5a29210.dir
+      size: 34290138
+      nfiles: 19
     - path: main.py
       hash: md5
       md5: 0a3047d3ee7ec9d5bd2f732574544f2f
@@ -60,21 +60,21 @@ stages:
     outs:
     - path: data/processed
       hash: md5
-      md5: a8848bff001cc256f66d084cd9d23163.dir
-      size: 53617348
-      nfiles: 19
+      md5: 1bfbc6d1cfb58553acd2f38a9616a306.dir
+      size: 53650930
+      nfiles: 20
   validate:
     cmd: uv run python gx/run_checkpoint.py
     deps:
     - path: data/processed
       hash: md5
-      md5: a8848bff001cc256f66d084cd9d23163.dir
-      size: 53617348
-      nfiles: 19
+      md5: 1bfbc6d1cfb58553acd2f38a9616a306.dir
+      size: 53650930
+      nfiles: 20
     - path: gx/run_checkpoint.py
       hash: md5
-      md5: 8836242e3f5d3fb7f25e0c5c585274e4
-      size: 10298
+      md5: a297ed2664d59465c91106086e0cfcbb
+      size: 10757
     - path: params.yaml
       hash: md5
       md5: 66a8c0af1089694e411d3d47f18136d7
@@ -97,9 +97,9 @@ stages:
     outs:
     - path: gx/uncommitted
       hash: md5
-      md5: 2b7514b073d4bd7236b8e7ab139bbf54.dir
-      size: 4248521
-      nfiles: 26
+      md5: d0a05e38d36dbfe0280c7de3ff879298.dir
+      size: 4346717
+      nfiles: 28
     - path: reports/validation/opensky_validation.json
       hash: md5
       md5: 205b32198ee9d9900ca862ac3faf566a
