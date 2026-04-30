@@ -32,9 +32,9 @@ stages:
           persist: true
 
   validate:
-    cmd: uv run python main.py validate
+    cmd: uv run python gx/run_checkpoint.py
     deps:
-      - main.py
+      - gx/run_checkpoint.py
       - src/data/validate_opensky_data.py
       - data/processed
       - params.yaml
@@ -42,5 +42,14 @@ stages:
       - validate.processed_dir
       - validate.history_file
       - validate.report_path
+      - validate.gx_dir
+      - validate.datasource_name
+      - validate.data_asset_name
+      - validate.expectation_suite_name
+      - validate.checkpoint_name
+      - validate.docs_site_name
+    outs:
+      - gx/uncommitted:
+          persist: true
     metrics:
       - reports/validation/opensky_validation.json

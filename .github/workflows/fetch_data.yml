@@ -23,7 +23,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.11"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -64,8 +64,8 @@ jobs:
           uv run dvc status
           uv run dvc repro
           uv run dvc push
-          git add dvc.lock
-          git commit -m "Update dvc.lock on `date` with GitHub Actions" || true
+          git add dvc.lock uv.lock
+          git commit -m "Update pipeline lock files on `date` with GitHub Actions" || true
 
       - name: Push changes
         uses: ad-m/github-push-action@master

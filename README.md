@@ -1,15 +1,21 @@
-# OpenSky DVC Pipeline
+# OpenSky DVC and Great Expectations Pipeline
 
-Ta projekt uporablja podatkovni cevovod z DVC za zajem, predobdelavo in validacijo podatkov iz OpenSky Network API. Prilagoditev sledi istemu principu kot primer z Arnes, vendar je parametrizirana za letalske `state vector` podatke in za lokalni zracni prostor, ki ga dolocimo z bounding box obmocjem.
+Ta projekt uporablja podatkovni cevovod z DVC za zajem, predobdelavo in validacijo podatkov iz OpenSky Network API. Poleg osnovnega DVC toka je validacija nadgrajena z uporabo knjiznice Great Expectations, da lahko po vsakem zagonu avtomatsko preverimo kakovost obdelanih letalskih podatkov in zgradimo porocila Data Docs.
 
 ## Pricakovani rezultat
 
-Razvit je ponovljiv DVC cevovod, ki:
+Razvit je ponovljiv cevovod, ki:
 
-- zajame OpenSky posnetek v `data/raw`,
+- zajame OpenSky posnetke v `data/raw`,
 - iz vseh surovih posnetkov zgradi obdelane tabele v `data/processed`,
-- pripravi kumulativno zgodovino letov `states_history.csv`,
-- izvede validacijo in shrani porocilo v `reports/validation/opensky_validation.json`.
+- pripravi kumulativno zgodovino `states_history.csv`,
+- izvede validacijo nad obdelanimi podatki z Great Expectations,
+- shrani validacijsko porocilo v `reports/validation/opensky_validation.json`,
+- generira HTML porocila v `gx/uncommitted/data_docs/local_site`.
+
+## Pomembna opomba o verzijah
+
+Za ta del naloge uporabljamo `great-expectations==0.18.21`. Ta veja dokumentacije in API-ja je vezana na starejso verzijo GX in po uradni dokumentaciji podpira Python 3.8 do 3.11. Zato je projekt za del validacije prilagojen na Python 3.11, `numpy<2.0` in `pandas<3.0`.
 
 ## Parametri cevovoda
 
@@ -36,13 +42,19 @@ validate:
   processed_dir: "data/processed"
   history_file: "data/processed/states_history.csv"
   report_path: "reports/validation/opensky_validation.json"
+  gx_dir: "gx"
+  datasource_name: "opensky_processed"
+  data_asset_name: "opensky_history"
+  expectation_suite_name: "opensky_history_suite"
+  checkpoint_name: "opensky_history_checkpoint"
+  docs_site_name: "local_site"
 ```
 
-Pomembna OpenSky prilagoditev je `fetch.bbox`, s katerim omejimo zajem na izbran del zracnega prostora. To je smiselna zamenjava za parameter `station` iz Arnes primera.
+Pomembna OpenSky prilagoditev je `fetch.bbox`, s katerim omejimo zajem na izbran del zracnega prostora. To je smiselna zamenjava za parameter `station` iz primera za ozracje.
 
 ## Faze DVC
 
-Projekt uporablja tri faze:
+Projekt uporablja tri glavne faze:
 
 1. `fetch`
    Prenese najnovejsi OpenSky snapshot in ga shrani v `data/raw/states_<timestamp>.json`.
@@ -51,130 +63,124 @@ Projekt uporablja tri faze:
    Prebere vse snapshot datoteke iz `data/raw`, vsako pretvori v tabelo `states_processed_<timestamp>.csv` in nato zgradi deterministicno zgodovinsko tabelo `states_history.csv`.
 
 3. `validate`
-   Preveri obdelane podatke in shrani validacijsko porocilo v JSON obliki.
+   Pozene Great Expectations checkpoint nad `states_history.csv`, zgradi Data Docs in shrani JSON povzetek validacije.
 
-Datoteka `dvc.yaml` je prilagojena tako, da DVC spremlja:
+Vizualno je tok naslednji:
 
-- odvisnosti skript,
-- vhodne mape z raw podatki,
-- parametre iz `params.yaml`,
-- izhode obdelave in metrike validacije.
+```text
+  +-------+
+  | fetch |
+  +-------+
+       |
+       v
++------------+
+| preprocess |
++------------+
+       |
+       v
+ +----------+
+ | validate |
+ +----------+
+```
 
-## Zakaj je ta prilagoditev primerna za OpenSky
+## Great Expectations za OpenSky
 
-Za DVC je pomembno, da je posamezna faza ponovljiva. Zato `preprocess` ne dograjuje zgodovine na podlagi prejsnjega izhoda, ampak jo ob vsakem zagonu ponovno zgradi iz vseh datotek v `data/raw`. S tem je rezultat odvisen samo od vhodov in parametrov, kar je pravilnejse za DVC kot inkrementalno dodajanje vrstic v obstojeco izhodno datoteko.
+Great Expectations uporabljamo za strukturirano validacijo obdelanih OpenSky podatkov. Namesto podatkov o kakovosti zraka tu preverjamo zgodovino letov `states_history.csv`, ki vsebuje stolpce, kot so `icao24`, `last_contact`, `longitude`, `latitude`, `velocity`, `true_track`, `snapshot_time_utc` in `source_snapshot`.
 
-Enakovredno zahtevi "da cevovod deluje za vsa merilna mesta" v OpenSky projektu pomeni:
+Skripta [gx/run_checkpoint.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/gx/run_checkpoint.py:1) ob zagonu:
 
-- da zajamemo vse zrakoplove znotraj izbranega bounding box obmocja,
-- da predobdelava deluje za vse zbrane raw snapshot datoteke,
-- da validacija preveri celotno kumulativno zgodovino.
+- inicializira ali ponovno uporabi Filesystem Data Context v mapi `gx`,
+- konfigurira Pandas filesystem datasource za obdelano zgodovino letov,
+- ustvari oziroma posodobi expectation suite `opensky_history_suite`,
+- ustvari oziroma posodobi checkpoint `opensky_history_checkpoint`,
+- pozene checkpoint,
+- zgradi Great Expectations Data Docs,
+- shrani povzetek validacije v `reports/validation/opensky_validation.json`.
+
+Tako se validacija lahko uporablja lokalno, v DVC cevovodu in v GitHub Actions.
+
+## Smiselna validacijska pravila za OpenSky
+
+Pri OpenSky projektu so primerna naslednja pricakovanja:
+
+- tabela vsebuje vsaj eno vrstico,
+- stolpci se ujemajo s pricakovano shemo obdelanega OpenSky nabora,
+- `icao24` ni prazen in se ujema s 6-mestnim hex zapisom,
+- `source_snapshot` sledi vzorcu `states_YYYYMMDDTHHMMSSZ.json`,
+- `latitude` je med `-90` in `90`,
+- `longitude` je med `-180` in `180`,
+- `velocity` ni negativna in ostaja v realnem operativnem razponu,
+- `true_track` je med `0` in `360`,
+- `position_source` je eden izmed vrednosti `0`, `1`, `2`,
+- kljucni casovni in identifikacijski stolpci niso manjkajoci.
+
+To je OpenSky ekvivalent zahtevi, da mora validacija delovati za vsa merilna mesta. Pri nas to pomeni, da mora validacija delovati za vse zajete zrakoplove v vseh snapshot datotekah znotraj izbranega `bbox` obmocja.
+
+## DVC validate faza
+
+Korak `validate` v `dvc.yaml` je definiran tako:
+
+```yaml
+validate:
+  cmd: uv run python gx/run_checkpoint.py
+  deps:
+    - gx/run_checkpoint.py
+    - src/data/validate_opensky_data.py
+    - data/processed
+    - params.yaml
+  params:
+    - validate.processed_dir
+    - validate.history_file
+    - validate.report_path
+    - validate.gx_dir
+    - validate.datasource_name
+    - validate.data_asset_name
+    - validate.expectation_suite_name
+    - validate.checkpoint_name
+    - validate.docs_site_name
+  outs:
+    - gx/uncommitted:
+        persist: true
+  metrics:
+    - reports/validation/opensky_validation.json
+```
+
+S tem poskrbimo, da se Great Expectations validacija pozene samo, ko pride do sprememb v obdelanih OpenSky podatkih ali v konfiguraciji validacije. Data Docs in validation results se ohranijo v `gx/uncommitted`, povzetek validacije pa je viden kot DVC metric.
 
 ## GitHub Actions in DVC
 
-V posodobljenem GitHub delovnem toku smo izvedli nekaj kljucnih sprememb, ki izboljsujejo preglednost, avtomatizacijo in zanesljivost procesiranja OpenSky podatkov. Po koraku za nastavitev Pythona je dodan locen korak za nastavitev Git konfiguracije, kar zagotavlja, da so vse nadaljnje Git operacije v GitHub Actions pravilno podpisane s podatki avtomatiziranega okolja.
+V GitHub Actions workflow-u smo tok prilagodili tako, da podpira tudi Great Expectations:
 
-Pomembna sprememba se nanasa tudi na upravljanje z DVC. Namesto rocnega poganjanja posameznih skript se uporablja ukaz `dvc repro`, ki samodejno izvede vse potrebne faze, definirane v `dvc.yaml`. To je za OpenSky projekt posebej koristno, ker se ob vsakem zagonu dosledno izvede celoten tok `fetch -> preprocess -> validate`, brez rocnega usklajevanja posameznih korakov.
+- workflow uporablja Python 3.11, ki je kompatibilen z GX 0.18.21,
+- najprej se izvede `uv sync`,
+- nato `dvc pull --allow-missing`, da prvi zagon ne pade zaradi se neobstojecih artefaktov,
+- `dvc repro` izvede celoten tok `fetch -> preprocess -> validate`,
+- `dvc push` shrani DVC artefakte,
+- `git add dvc.lock uv.lock` pripravi spremembe zaklepnih datotek za commit.
 
-Nastavitve za oddaljeni DVC vir so locene v poseben korak `DVC setup remote`, kjer se konfigurira DagsHub S3 endpoint ter poverilnice za dostop do DVC oddaljene shrambe. S tem je delovni tok bolj pregleden in lazje vzdrzevan.
+Aktualni workflow je v [fetch_data.yml](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/.github/workflows/fetch_data.yml:1).
 
-V delu, kjer se izvede cevovod, workflow najprej poklice `dvc pull --allow-missing`. Ta prilagoditev je pomembna zato, ker validacijsko porocilo ob prvem zagonu se morda ne obstaja v DVC cache-u. Z uporabo `--allow-missing` workflow ne odpove po nepotrebnem, ampak nadaljuje do `dvc repro`, kjer se manjkajoci artefakti ponovno ustvarijo, nato pa se z `dvc push` shranijo v oddaljeni DVC repozitorij.
+## Zagon validacije
 
-Na koncu se namesto rocnega dodajanja posameznih podatkovnih datotek v Git doda in potrdi datoteka `dvc.lock`, ki belezi trenutno stanje rezultatov cevovoda. Ce se v cevovodu ne zgodi nobena sprememba, bo korak `git commit` varno preskocen zaradi dodatka `|| true`. S tem smo tok poenostavili in zagotovili, da se celoten postopek pridobivanja, obdelave, validacije in shranjevanja OpenSky podatkov izvaja na ponovljiv in konsistenten nacin.
+Validacijo lahko zazenes neposredno:
 
-## GitHub workflow za OpenSky
-
-Celoten GitHub Actions potek dela z uporabo DVC cevovodov:
-
-```yaml
-name: Fetch data on schedule
-
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "0 0 * * *"
-
-permissions:
-  contents: write
-
-jobs:
-  fetch_opensky:
-    name: Fetch and pre-process OpenSky data
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PAT_TOKEN || github.token }}
-          fetch-depth: 0
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Setup Git
-        run: |
-          git config --local user.email "actions@github.com"
-          git config --local user.name "GitHub Actions"
-
-      - name: DVC setup remote
-        env:
-          DAGSHUB_S3_ENDPOINT_URL: ${{ vars.DAGSHUB_S3_ENDPOINT_URL }}
-          DAGSHUB_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_ACCESS_KEY_ID }}
-          DAGSHUB_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_SECRET_ACCESS_KEY }}
-        run: |
-          if [ -n "$DAGSHUB_S3_ENDPOINT_URL" ]; then
-            uv run dvc remote add -d origin s3://dvc --force
-            uv run dvc remote modify origin endpointurl "$DAGSHUB_S3_ENDPOINT_URL"
-            uv run dvc remote modify origin --local access_key_id "$DAGSHUB_ACCESS_KEY_ID"
-            uv run dvc remote modify origin --local secret_access_key "$DAGSHUB_SECRET_ACCESS_KEY"
-          else
-            echo "DAGSHUB_S3_ENDPOINT_URL is not set. Skipping remote setup."
-          fi
-
-      - name: Run DVC pipeline
-        env:
-          OPENSKY_USERNAME: ${{ secrets.OPENSKY_USERNAME }}
-          OPENSKY_PASSWORD: ${{ secrets.OPENSKY_PASSWORD }}
-          OPENSKY_URL: ${{ vars.OPENSKY_URL }}
-          DAGSHUB_S3_ENDPOINT_URL: ${{ vars.DAGSHUB_S3_ENDPOINT_URL }}
-          DAGSHUB_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_ACCESS_KEY_ID }}
-          DAGSHUB_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_SECRET_ACCESS_KEY }}
-        run: |
-          uv run dvc pull --allow-missing
-          uv run dvc status
-          uv run dvc repro
-          uv run dvc push
-          git add dvc.lock
-          git commit -m "Update dvc.lock on `date` with GitHub Actions" || true
-
-      - name: Push changes
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.PAT_TOKEN }}
+```bash
+uv run python gx/run_checkpoint.py
 ```
 
-## Zagon
-
-Za ponovni izracun cevovoda uporabi:
+Lahko pa pozenes celoten cevovod:
 
 ```bash
 dvc repro
 ```
 
-Za deljenje rezultatov po uspesni izvedbi:
+Po uspesni izvedbi lahko rezultate delis z:
 
 ```bash
 git push
 dvc push
 ```
 
-Avtomatskega `git commit` in `git push` nismo vkljucili neposredno v `dvc.yaml`, ker sta to okoljsko odvisna koraka, ki poslabsata prenosljivost in ponovljivost cevovoda. Bolj varno je, da ostaneta locena od same obdelave podatkov in se izvajata v GitHub Actions workflow-u.
+## Naslednji korak
+
+Logicen naslednji korak je objava generiranih Great Expectations Data Docs na Netlify, da bo porocilo dostopno tudi kot javna staticna stran po vsakem zagonu CI/CD toka.

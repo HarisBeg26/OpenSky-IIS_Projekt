@@ -19,7 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     preprocess.add_argument("--output-dir", default="data/processed", help="Processed directory")
     preprocess.add_argument("--format", choices=["csv", "parquet"], default="csv")
 
-    validate = subparsers.add_parser("validate", help="Validate processed history or a selected file")
+    validate = subparsers.add_parser("validate", help="Run the Great Expectations checkpoint for processed flight data")
     validate.add_argument("--input-file", default=None, help="Optional explicit processed file")
     validate.add_argument("--processed-dir", default="data/processed", help="Directory with processed files")
     validate.add_argument("--report-path", default=None, help="Optional validation report output path")
