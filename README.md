@@ -152,13 +152,29 @@ S tem poskrbimo, da se Great Expectations validacija pozene samo, ko pride do sp
 V GitHub Actions workflow-u smo tok prilagodili tako, da podpira tudi Great Expectations:
 
 - workflow uporablja Python 3.11, ki je kompatibilen z GX 0.18.21,
-- najprej se izvede `uv sync`,
+- najprej se izvede `uv lock --python 3.11` in nato `uv sync --python 3.11 --locked`,
 - nato `dvc pull --allow-missing`, da prvi zagon ne pade zaradi se neobstojecih artefaktov,
 - `dvc repro` izvede celoten tok `fetch -> preprocess -> validate`,
 - `dvc push` shrani DVC artefakte,
-- `git add dvc.lock uv.lock` pripravi spremembe zaklepnih datotek za commit.
+- `git add dvc.lock uv.lock` pripravi spremembe zaklepnih datotek za commit,
+- po uspesni validaciji se Data Docs iz `gx/uncommitted/data_docs/local_site` objavijo na Netlify.
 
 Aktualni workflow je v [fetch_data.yml](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/.github/workflows/fetch_data.yml:1).
+
+## Netlify objava
+
+Za samodejno objavo Great Expectations porocil workflow uporablja Netlify CLI in produkcijski deploy v ze obstojece Netlify mesto. V GitHub Secrets morata biti nastavljena:
+
+- `NETLIFY_AUTH_TOKEN`
+- `NETLIFY_SITE_ID`
+
+Workflow po validaciji objavi vsebino mape `gx/uncommitted/data_docs/local_site` z ukazom:
+
+```bash
+netlify deploy --dir=gx/uncommitted/data_docs/local_site --prod
+```
+
+To pomeni, da se po vsakem uspesnem scheduled ali rocno sprozenem zagonu osvezi javno dostopna HTML dokumentacija Great Expectations.
 
 ## Zagon validacije
 

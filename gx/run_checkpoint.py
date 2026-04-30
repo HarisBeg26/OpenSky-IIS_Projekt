@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import great_expectations as ge
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -38,6 +37,16 @@ EXPECTED_COLUMNS = [
     "source_snapshot",
     "event_time_utc",
 ]
+
+
+def _ensure_supported_python() -> None:
+    version = sys.version_info
+    if version.major != 3 or version.minor != 11:
+        raise RuntimeError(
+            "Great Expectations 0.18.21 in this project must run on Python 3.11. "
+            f"Current interpreter is {version.major}.{version.minor}.{version.micro}. "
+            "Recreate the virtual environment with Python 3.11 and run uv lock + uv sync."
+        )
 
 
 def _project_path(value: str | Path) -> Path:
@@ -110,6 +119,9 @@ def _resolve_history_file(history_file: str | None, processed_dir: str | None, c
 
 
 def _get_context(gx_dir: Path):
+    _ensure_supported_python()
+    import great_expectations as ge
+
     gx_dir.mkdir(parents=True, exist_ok=True)
     return ge.get_context(context_root_dir=str(gx_dir))
 

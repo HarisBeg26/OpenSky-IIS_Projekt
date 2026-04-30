@@ -28,8 +28,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Refresh uv lock for Python 3.11
+        run: uv lock --python 3.11
+
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --python 3.11 --locked
 
       - name: Setup Git
         run: |
@@ -71,3 +74,18 @@ jobs:
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Setup Node for Netlify deploy
+        if: ${{ success() && secrets.NETLIFY_AUTH_TOKEN != '' && secrets.NETLIFY_SITE_ID != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Deploy Great Expectations Data Docs to Netlify
+        if: ${{ success() && secrets.NETLIFY_AUTH_TOKEN != '' && secrets.NETLIFY_SITE_ID != '' }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          test -f gx/uncommitted/data_docs/local_site/index.html
+          npx netlify-cli deploy --dir=gx/uncommitted/data_docs/local_site --prod --message "OpenSky Great Expectations Data Docs"
