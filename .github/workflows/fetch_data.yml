@@ -76,16 +76,18 @@ jobs:
           github_token: ${{ secrets.PAT_TOKEN }}
 
       - name: Setup Node for Netlify deploy
-        if: ${{ success() && secrets.NETLIFY_AUTH_TOKEN != '' && secrets.NETLIFY_SITE_ID != '' }}
         uses: actions/setup-node@v6
         with:
           node-version: 24
 
       - name: Deploy Great Expectations Data Docs to Netlify
-        if: ${{ success() && secrets.NETLIFY_AUTH_TOKEN != '' && secrets.NETLIFY_SITE_ID != '' }}
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ] || [ -z "$NETLIFY_SITE_ID" ]; then
+            echo "Netlify secrets are not configured. Skipping deploy."
+            exit 0
+          fi
           test -f gx/uncommitted/data_docs/local_site/index.html
           npx netlify-cli deploy --dir=gx/uncommitted/data_docs/local_site --prod --message "OpenSky Great Expectations Data Docs"
