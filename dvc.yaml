@@ -8,6 +8,8 @@ stages:
     params:
       - fetch.url
       - fetch.output_dir
+      - fetch.timeout_seconds
+      - fetch.bbox
     outs:
       - data/raw:
           persist: true
@@ -24,6 +26,7 @@ stages:
       - preprocess.raw_dir
       - preprocess.output_dir
       - preprocess.format
+      - preprocess.history_filename
     outs:
       - data/processed:
           persist: true
@@ -37,3 +40,7 @@ stages:
       - params.yaml
     params:
       - validate.processed_dir
+      - validate.history_file
+      - validate.report_path
+    metrics:
+      - reports/validation/opensky_validation.json

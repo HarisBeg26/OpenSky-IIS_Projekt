@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
 import yaml
 
 DEFAULT_PROCESSED_DIR = "data/processed"
+DEFAULT_REPORT_PATH = "reports/validation/opensky_validation.json"
 
 
 def _latest_processed(processed_dir: Path) -> Path:
@@ -27,14 +29,22 @@ def _latest_processed(processed_dir: Path) -> Path:
 
 
 def _load_validate_params(params_path: str = "params.yaml") -> dict:
-    defaults = {"processed_dir": DEFAULT_PROCESSED_DIR}
+    defaults = {
+        "processed_dir": DEFAULT_PROCESSED_DIR,
+        "history_file": None,
+        "report_path": DEFAULT_REPORT_PATH,
+    }
     params_file = Path(params_path)
     if not params_file.exists():
         return defaults
 
     loaded = yaml.safe_load(params_file.read_text(encoding="utf-8")) or {}
     validate_params = loaded.get("validate", {}) if isinstance(loaded, dict) else {}
-    return {"processed_dir": validate_params.get("processed_dir", defaults["processed_dir"]) }
+    return {
+        "processed_dir": validate_params.get("processed_dir", defaults["processed_dir"]),
+        "history_file": validate_params.get("history_file", defaults["history_file"]),
+        "report_path": validate_params.get("report_path", defaults["report_path"]),
+    }
 
 
 def _load_dataframe(path: Path) -> pd.DataFrame:
@@ -82,14 +92,35 @@ def _append_negative_issue(df: pd.DataFrame, column: str, issues: list[str]) -> 
         issues.append(f"negative {column} count = {count}")
 
 
+def _write_report(report_path: Path, validation_file: Path, row_count: int, issues: list[str]) -> None:
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "status": "passed" if not issues else "failed",
+        "validation_file": str(validation_file),
+        "row_count": row_count,
+        "issue_count": len(issues),
+        "issues": issues,
+    }
+    report_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def validate_opensky_data(
     input_file: str | None = None,
     processed_dir: str = DEFAULT_PROCESSED_DIR,
+    report_path: str | None = None,
 ) -> int:
     try:
         params = _load_validate_params()
         effective_processed_dir = processed_dir if processed_dir != DEFAULT_PROCESSED_DIR else params["processed_dir"]
-        path = Path(input_file) if input_file else _latest_processed(Path(effective_processed_dir))
+        effective_report_path = Path(report_path) if report_path else Path(params["report_path"])
+
+        configured_history_file = params["history_file"]
+        if input_file:
+            path = Path(input_file)
+        elif configured_history_file:
+            path = Path(configured_history_file)
+        else:
+            path = _latest_processed(Path(effective_processed_dir))
 
         df = _load_dataframe(path)
 
@@ -104,6 +135,8 @@ def validate_opensky_data(
 
         print(f"Validation file: {path}")
         print(f"Rows: {len(df)}")
+        _write_report(effective_report_path, path, len(df), issues)
+        print(f"Validation report: {effective_report_path}")
 
         if issues:
             print("VALIDATION FAILED")

@@ -10,12 +10,15 @@ import yaml
 
 OPEN_SKY_URL = "https://opensky-network.org/api/states/all"
 DEFAULT_RAW_DIR = "data/raw"
+DEFAULT_TIMEOUT_SECONDS = 30
 
 
 def _load_fetch_params(params_path: str = "params.yaml") -> dict:
     defaults = {
         "url": OPEN_SKY_URL,
         "output_dir": DEFAULT_RAW_DIR,
+        "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
+        "bbox": None,
     }
     params_file = Path(params_path)
     if not params_file.exists():
@@ -23,10 +26,25 @@ def _load_fetch_params(params_path: str = "params.yaml") -> dict:
 
     loaded = yaml.safe_load(params_file.read_text(encoding="utf-8")) or {}
     fetch_params = loaded.get("fetch", {}) if isinstance(loaded, dict) else {}
+    bbox = fetch_params.get("bbox")
     return {
         "url": fetch_params.get("url", defaults["url"]),
         "output_dir": fetch_params.get("output_dir", defaults["output_dir"]),
+        "timeout_seconds": fetch_params.get("timeout_seconds", defaults["timeout_seconds"]),
+        "bbox": bbox if isinstance(bbox, dict) else defaults["bbox"],
     }
+
+
+def _build_bbox_query(bbox: dict | None) -> dict[str, float]:
+    if not bbox:
+        return {}
+
+    required_keys = ("lamin", "lomin", "lamax", "lomax")
+    missing = [key for key in required_keys if key not in bbox]
+    if missing:
+        raise ValueError(f"Bounding box is missing keys: {missing}")
+
+    return {key: float(bbox[key]) for key in required_keys}
 
 
 def fetch_opensky_data(output_dir: str = DEFAULT_RAW_DIR) -> int:
@@ -37,6 +55,8 @@ def fetch_opensky_data(output_dir: str = DEFAULT_RAW_DIR) -> int:
         auth = (username, password) if username and password else None
         configured_url = params["url"]
         url = os.getenv("OPENSKY_URL", configured_url)
+        timeout_seconds = int(params["timeout_seconds"])
+        query_params = _build_bbox_query(params["bbox"])
 
         configured_output_dir = params["output_dir"]
         effective_output_dir = output_dir if output_dir != DEFAULT_RAW_DIR else configured_output_dir
@@ -44,8 +64,9 @@ def fetch_opensky_data(output_dir: str = DEFAULT_RAW_DIR) -> int:
         response = requests.get(
             url,
             auth=auth,
+            params=query_params or None,
             headers={"User-Agent": "SkyWatch/0.1"},
-            timeout=30,
+            timeout=timeout_seconds,
         )
         response.raise_for_status()
         payload = response.json()
@@ -58,6 +79,8 @@ def fetch_opensky_data(output_dir: str = DEFAULT_RAW_DIR) -> int:
 
         print(f"Saved OpenSky snapshot to: {out_file}")
         print(f"Snapshot time: {payload.get('time')}, records: {len(payload.get('states') or [])}")
+        if query_params:
+            print(f"Bounding box: {query_params}")
         return 0
     except requests.RequestException as exc:
         print(f"Fetch failed: {exc}")

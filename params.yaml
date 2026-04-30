@@ -1,11 +1,20 @@
 fetch:
   url: "https://opensky-network.org/api/states/all"
   output_dir: "data/raw"
+  timeout_seconds: 30
+  bbox:
+    lamin: 42.5
+    lomin: 15.5
+    lamax: 46.5
+    lomax: 19.8
 
 preprocess:
   raw_dir: "data/raw"
   output_dir: "data/processed"
   format: "csv"
+  history_filename: "states_history.csv"
 
 validate:
   processed_dir: "data/processed"
+  history_file: "data/processed/states_history.csv"
+  report_path: "reports/validation/opensky_validation.json"
