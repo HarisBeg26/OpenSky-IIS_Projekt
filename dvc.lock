@@ -5,12 +5,12 @@ stages:
     deps:
     - path: main.py
       hash: md5
-      md5: 0a3047d3ee7ec9d5bd2f732574544f2f
-      size: 2182
+      md5: 5adbe7c7a3f989f6400d61379a2804e1
+      size: 3116
     - path: params.yaml
       hash: md5
-      md5: 66a8c0af1089694e411d3d47f18136d7
-      size: 678
+      md5: ce501f9aca52ba548b7b1e0cacffc55a
+      size: 1181
     - path: src/data/fetch_opensky_data.py
       hash: md5
       md5: 3944eb3eff2e866c0132eeee798f5373
@@ -28,25 +28,25 @@ stages:
     outs:
     - path: data/raw
       hash: md5
-      md5: 6fe2f3140dfb3277b26b8380c5a29210.dir
-      size: 34290138
-      nfiles: 19
+      md5: b37400fddbdd7487d97206d399ac1e85.dir
+      size: 34309189
+      nfiles: 20
   preprocess:
     cmd: uv run python main.py preprocess
     deps:
     - path: data/raw
       hash: md5
-      md5: 6fe2f3140dfb3277b26b8380c5a29210.dir
-      size: 34290138
-      nfiles: 19
+      md5: b37400fddbdd7487d97206d399ac1e85.dir
+      size: 34309189
+      nfiles: 20
     - path: main.py
       hash: md5
-      md5: 0a3047d3ee7ec9d5bd2f732574544f2f
-      size: 2182
+      md5: 5adbe7c7a3f989f6400d61379a2804e1
+      size: 3116
     - path: params.yaml
       hash: md5
-      md5: 66a8c0af1089694e411d3d47f18136d7
-      size: 678
+      md5: ce501f9aca52ba548b7b1e0cacffc55a
+      size: 1181
     - path: src/data/preprocess_opensky_data.py
       hash: md5
       md5: daa58845433ee379d30cefe25e1c203e
@@ -60,25 +60,25 @@ stages:
     outs:
     - path: data/processed
       hash: md5
-      md5: 1bfbc6d1cfb58553acd2f38a9616a306.dir
-      size: 53650930
-      nfiles: 20
+      md5: af39e5a0d278b03f946361d2c89c5e3b.dir
+      size: 53681724
+      nfiles: 21
   validate:
     cmd: uv run python gx/run_checkpoint.py
     deps:
     - path: data/processed
       hash: md5
-      md5: 1bfbc6d1cfb58553acd2f38a9616a306.dir
-      size: 53650930
-      nfiles: 20
+      md5: af39e5a0d278b03f946361d2c89c5e3b.dir
+      size: 53681724
+      nfiles: 21
     - path: gx/run_checkpoint.py
       hash: md5
       md5: a297ed2664d59465c91106086e0cfcbb
       size: 10757
     - path: params.yaml
       hash: md5
-      md5: 66a8c0af1089694e411d3d47f18136d7
-      size: 678
+      md5: ce501f9aca52ba548b7b1e0cacffc55a
+      size: 1181
     - path: src/data/validate_opensky_data.py
       hash: md5
       md5: b3322831f72c389d2f3ecb72bbe41f5c
@@ -97,10 +97,56 @@ stages:
     outs:
     - path: gx/uncommitted
       hash: md5
-      md5: d0a05e38d36dbfe0280c7de3ff879298.dir
-      size: 4346717
-      nfiles: 28
+      md5: 41d063161f4e547226601e0ba305d395.dir
+      size: 4444916
+      nfiles: 30
     - path: reports/validation/opensky_validation.json
       hash: md5
       md5: 205b32198ee9d9900ca862ac3faf566a
       size: 417
+  test_data:
+    cmd: uv run python src/data/test_opensky_data.py
+    deps:
+    - path: data/processed
+      hash: md5
+      md5: af39e5a0d278b03f946361d2c89c5e3b.dir
+      size: 53681724
+      nfiles: 21
+    - path: params.yaml
+      hash: md5
+      md5: ce501f9aca52ba548b7b1e0cacffc55a
+      size: 1181
+    - path: src/data/test_opensky_data.py
+      hash: md5
+      md5: 87e80b2e969674679deb8c89331e2eff
+      size: 8703
+    params:
+      params.yaml:
+        test_data.drop_columns:
+        - icao24
+        - callsign
+        - time_position
+        - last_contact
+        - sensors
+        - squawk
+        - snapshot_time
+        - snapshot_time_utc
+        - source_snapshot
+        - event_time_utc
+        - captured_at_utc
+        test_data.processed_dir: data/processed
+        test_data.reference_dir: data/reference/opensky
+        test_data.reference_file: states_reference.csv
+        test_data.report_html: reports/evidently/opensky_data_drift_report.html
+        test_data.report_json: reports/evidently/opensky_data_drift_summary.json
+    outs:
+    - path: data/reference
+      hash: md5
+      md5: 6ad472dd8aceadb298d51ca78762a548.dir
+      size: 15568
+      nfiles: 1
+    - path: reports/evidently
+      hash: md5
+      md5: 9a8c532dbbd86daaeaf0c3c44e513c8c.dir
+      size: 4210536
+      nfiles: 2
