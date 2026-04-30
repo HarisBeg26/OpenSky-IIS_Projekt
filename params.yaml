@@ -24,3 +24,22 @@ validate:
   expectation_suite_name: "opensky_history_suite"
   checkpoint_name: "opensky_history_checkpoint"
   docs_site_name: "local_site"
+
+test_data:
+  processed_dir: "data/processed"
+  reference_dir: "data/reference/opensky"
+  reference_file: "states_reference.csv"
+  report_html: "reports/evidently/opensky_data_drift_report.html"
+  report_json: "reports/evidently/opensky_data_drift_summary.json"
+  drop_columns:
+    - "icao24"
+    - "callsign"
+    - "time_position"
+    - "last_contact"
+    - "sensors"
+    - "squawk"
+    - "snapshot_time"
+    - "snapshot_time_utc"
+    - "source_snapshot"
+    - "event_time_utc"
+    - "captured_at_utc"

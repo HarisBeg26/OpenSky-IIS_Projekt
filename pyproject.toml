@@ -8,6 +8,7 @@ requires-python = ">=3.11,<3.12"
 dependencies = [
     "dvc>=3.67.1",
     "dvc-s3>=3.3.0",
+    "evidently>=0.7.1,<0.8.0",
     "fastapi>=0.135.1",
     "great-expectations==0.18.21",
     "mlflow>=1.27.0",

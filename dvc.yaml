@@ -53,3 +53,22 @@ stages:
           persist: true
     metrics:
       - reports/validation/opensky_validation.json
+
+  test_data:
+    cmd: uv run python src/data/test_opensky_data.py
+    deps:
+      - src/data/test_opensky_data.py
+      - data/processed
+      - params.yaml
+    params:
+      - test_data.processed_dir
+      - test_data.reference_dir
+      - test_data.reference_file
+      - test_data.report_html
+      - test_data.report_json
+      - test_data.drop_columns
+    outs:
+      - data/reference:
+          persist: true
+      - reports/evidently:
+          persist: true
