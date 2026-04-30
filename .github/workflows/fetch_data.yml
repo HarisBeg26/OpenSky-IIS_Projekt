@@ -60,7 +60,7 @@ jobs:
           DAGSHUB_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_ACCESS_KEY_ID }}
           DAGSHUB_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_SECRET_ACCESS_KEY }}
         run: |
-          uv run dvc pull
+          uv run dvc pull --allow-missing
           uv run dvc status
           uv run dvc repro
           uv run dvc push
