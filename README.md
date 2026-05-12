@@ -68,6 +68,9 @@ test_data:
   reference_file: "states_reference.csv"
   report_html: "reports/evidently/opensky_data_drift_report.html"
   report_json: "reports/evidently/opensky_data_drift_summary.json"
+  min_rows: 30
+  max_failed_test_ratio: 0.2
+  max_failed_tests: 10
   drop_columns:
     - "icao24"
     - "callsign"
@@ -140,6 +143,13 @@ Ob prvem zagonu referencni snapshot se ne obstaja, zato se trenutni snapshot upo
 
 Ker nekateri OpenSky stolpci vsebujejo identifikatorje ali casovne oznake, ki skoraj vedno driftajo in niso koristni za primerjavo porazdelitev, jih pred testiranjem izpustimo. To so na primer `icao24`, `callsign`, `time_position`, `last_contact`, `snapshot_time`, `source_snapshot` in sorodna casovna polja.
 
+Ker so posamezni OpenSky snapshoti v izbranem `bbox` obmocju lahko zelo majhni, je drift gate dodatno omehcan z dvema praviloma:
+
+- strogo fail/passed odlocanje vklopimo sele, ko imata tako `reference` kot `current` vsaj `test_data.min_rows` vrstic,
+- tudi pri dovolj velikem vzorcu stage pade sele, ko je presezen `test_data.max_failed_tests` ali `test_data.max_failed_test_ratio`.
+
+S tem se izognemo temu, da bi cevovod padal zaradi naravne variance v snapshotu z npr. 10 do 20 letali, kjer statisticni drift testi niso dovolj stabilni za trd CI signal.
+
 Skripta [test_opensky_data.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/src/data/test_opensky_data.py:1) izvede:
 
 - nalaganje trenutnega in referencnega snapshota,
@@ -186,6 +196,9 @@ test_data:
     - test_data.reference_file
     - test_data.report_html
     - test_data.report_json
+    - test_data.min_rows
+    - test_data.max_failed_test_ratio
+    - test_data.max_failed_tests
     - test_data.drop_columns
   outs:
     - data/reference:

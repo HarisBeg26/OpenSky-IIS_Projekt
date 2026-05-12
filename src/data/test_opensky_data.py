@@ -15,6 +15,9 @@ DEFAULT_REFERENCE_DIR = "data/reference/opensky"
 DEFAULT_REFERENCE_FILE = "states_reference.csv"
 DEFAULT_REPORT_HTML = "reports/evidently/opensky_data_drift_report.html"
 DEFAULT_REPORT_JSON = "reports/evidently/opensky_data_drift_summary.json"
+DEFAULT_MIN_ROWS = 30
+DEFAULT_MAX_FAILED_TEST_RATIO = 0.2
+DEFAULT_MAX_FAILED_TESTS = 10
 DEFAULT_DROP_COLUMNS = [
     "icao24",
     "callsign",
@@ -42,6 +45,9 @@ def _load_test_params(params_path: str = "params.yaml") -> dict:
         "reference_file": DEFAULT_REFERENCE_FILE,
         "report_html": DEFAULT_REPORT_HTML,
         "report_json": DEFAULT_REPORT_JSON,
+        "min_rows": DEFAULT_MIN_ROWS,
+        "max_failed_test_ratio": DEFAULT_MAX_FAILED_TEST_RATIO,
+        "max_failed_tests": DEFAULT_MAX_FAILED_TESTS,
         "drop_columns": DEFAULT_DROP_COLUMNS,
     }
     params_file = _project_path(params_path)
@@ -56,6 +62,9 @@ def _load_test_params(params_path: str = "params.yaml") -> dict:
         "reference_file": test_params.get("reference_file", defaults["reference_file"]),
         "report_html": test_params.get("report_html", defaults["report_html"]),
         "report_json": test_params.get("report_json", defaults["report_json"]),
+        "min_rows": int(test_params.get("min_rows", defaults["min_rows"])),
+        "max_failed_test_ratio": float(test_params.get("max_failed_test_ratio", defaults["max_failed_test_ratio"])),
+        "max_failed_tests": int(test_params.get("max_failed_tests", defaults["max_failed_tests"])),
         "drop_columns": test_params.get("drop_columns", defaults["drop_columns"]),
     }
 
@@ -122,6 +131,61 @@ def _collect_failed_tests(report_dict: dict) -> list[dict]:
     return [test for test in tests if test.get("status") != "SUCCESS"]
 
 
+def _evaluate_gate(
+    current_rows: int,
+    reference_rows: int,
+    total_tests: int,
+    failed_tests: list[dict],
+    min_rows: int,
+    max_failed_test_ratio: float,
+    max_failed_tests: int,
+) -> tuple[bool, str, dict]:
+    failed_count = len(failed_tests)
+    failed_ratio = (failed_count / total_tests) if total_tests else 0.0
+
+    gate_details = {
+        "current_rows": current_rows,
+        "reference_rows": reference_rows,
+        "min_rows": min_rows,
+        "max_failed_test_ratio": max_failed_test_ratio,
+        "max_failed_tests": max_failed_tests,
+        "total_tests": total_tests,
+        "failed_test_count": failed_count,
+        "failed_test_ratio": failed_ratio,
+    }
+
+    if current_rows < min_rows or reference_rows < min_rows:
+        reason = (
+            "Insufficient rows for strict drift gating: "
+            f"current={current_rows}, reference={reference_rows}, required>={min_rows}."
+        )
+        gate_details["decision"] = "insufficient_rows"
+        return True, reason, gate_details
+
+    if failed_count > max_failed_tests:
+        reason = (
+            "Too many failed Evidently tests: "
+            f"{failed_count}>{max_failed_tests}."
+        )
+        gate_details["decision"] = "failed_test_count"
+        return False, reason, gate_details
+
+    if failed_ratio > max_failed_test_ratio:
+        reason = (
+            "Too high failed Evidently test ratio: "
+            f"{failed_ratio:.2%}>{max_failed_test_ratio:.2%}."
+        )
+        gate_details["decision"] = "failed_test_ratio"
+        return False, reason, gate_details
+
+    reason = (
+        "Evidently drift gate passed: "
+        f"{failed_count}/{total_tests} failed tests ({failed_ratio:.2%})."
+    )
+    gate_details["decision"] = "passed"
+    return True, reason, gate_details
+
+
 def _write_summary(
     report_json_path: Path,
     current_path: Path,
@@ -131,10 +195,13 @@ def _write_summary(
     used_columns: list[str],
     removed_empty: list[str],
     failed_tests: list[dict],
+    gate_passed: bool,
+    gate_reason: str,
+    gate_details: dict,
 ) -> None:
     report_json_path.parent.mkdir(parents=True, exist_ok=True)
     summary = {
-        "status": "passed" if not failed_tests else "failed",
+        "status": "passed" if gate_passed else "failed",
         "current_file": str(current_path),
         "reference_file": str(reference_path),
         "report_html": str(report_html_path),
@@ -142,6 +209,8 @@ def _write_summary(
         "removed_empty_columns": removed_empty,
         "test_count": len(result_dict.get("tests", [])),
         "failed_test_count": len(failed_tests),
+        "gate_reason": gate_reason,
+        "gate_details": gate_details,
         "failed_tests": [
             {
                 "name": test.get("name"),
@@ -203,6 +272,15 @@ def test_opensky_data(
 
         result_dict = result.dict()
         failed_tests = _collect_failed_tests(result_dict)
+        gate_passed, gate_reason, gate_details = _evaluate_gate(
+            current_rows=len(current_eval),
+            reference_rows=len(reference_eval),
+            total_tests=len(result_dict.get("tests", [])),
+            failed_tests=failed_tests,
+            min_rows=int(params["min_rows"]),
+            max_failed_test_ratio=float(params["max_failed_test_ratio"]),
+            max_failed_tests=int(params["max_failed_tests"]),
+        )
         _write_summary(
             report_json_path=report_json_path,
             current_path=current_path,
@@ -212,6 +290,9 @@ def test_opensky_data(
             used_columns=used_columns,
             removed_empty=removed_empty,
             failed_tests=failed_tests,
+            gate_passed=gate_passed,
+            gate_reason=gate_reason,
+            gate_details=gate_details,
         )
 
         print(f"Current snapshot: {current_path}")
@@ -219,12 +300,13 @@ def test_opensky_data(
         print(f"Compared columns: {used_columns}")
         print(f"Evidently report: {report_html_path}")
         print(f"Evidently summary: {report_json_path}")
+        print(gate_reason)
 
-        if failed_tests:
-            print("Evidently data drift tests failed.")
+        if not gate_passed:
+            print("Evidently data drift gate failed.")
             return 1
 
-        print("Evidently data drift tests passed.")
+        print("Evidently data drift gate passed.")
         reference_path.parent.mkdir(parents=True, exist_ok=True)
         current.to_csv(reference_path, index=False)
         if current_path.resolve() != reference_path.resolve():

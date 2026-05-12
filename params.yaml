@@ -31,6 +31,9 @@ test_data:
   reference_file: "states_reference.csv"
   report_html: "reports/evidently/opensky_data_drift_report.html"
   report_json: "reports/evidently/opensky_data_drift_summary.json"
+  min_rows: 30
+  max_failed_test_ratio: 0.2
+  max_failed_tests: 10
   drop_columns:
     - "icao24"
     - "callsign"

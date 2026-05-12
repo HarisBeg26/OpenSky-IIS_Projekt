@@ -66,6 +66,9 @@ stages:
       - test_data.reference_file
       - test_data.report_html
       - test_data.report_json
+      - test_data.min_rows
+      - test_data.max_failed_test_ratio
+      - test_data.max_failed_tests
       - test_data.drop_columns
     outs:
       - data/reference:
