@@ -9,8 +9,8 @@ stages:
       size: 3116
     - path: params.yaml
       hash: md5
-      md5: ce501f9aca52ba548b7b1e0cacffc55a
-      size: 1181
+      md5: c3131df46657d5324b0908634c3b447f
+      size: 1215
     - path: src/data/fetch_opensky_data.py
       hash: md5
       md5: 3944eb3eff2e866c0132eeee798f5373
@@ -28,25 +28,25 @@ stages:
     outs:
     - path: data/raw
       hash: md5
-      md5: b37400fddbdd7487d97206d399ac1e85.dir
-      size: 34309189
-      nfiles: 20
+      md5: 7e686641b752101a445e46b99ba2f802.dir
+      size: 34325887
+      nfiles: 21
   preprocess:
     cmd: uv run python main.py preprocess
     deps:
     - path: data/raw
       hash: md5
-      md5: b37400fddbdd7487d97206d399ac1e85.dir
-      size: 34309189
-      nfiles: 20
+      md5: 7e686641b752101a445e46b99ba2f802.dir
+      size: 34325887
+      nfiles: 21
     - path: main.py
       hash: md5
       md5: 5adbe7c7a3f989f6400d61379a2804e1
       size: 3116
     - path: params.yaml
       hash: md5
-      md5: ce501f9aca52ba548b7b1e0cacffc55a
-      size: 1181
+      md5: c3131df46657d5324b0908634c3b447f
+      size: 1215
     - path: src/data/preprocess_opensky_data.py
       hash: md5
       md5: daa58845433ee379d30cefe25e1c203e
@@ -60,25 +60,25 @@ stages:
     outs:
     - path: data/processed
       hash: md5
-      md5: af39e5a0d278b03f946361d2c89c5e3b.dir
-      size: 53681724
-      nfiles: 21
+      md5: 31fa2361623472bbdeb997a15dd874fe.dir
+      size: 53708848
+      nfiles: 22
   validate:
     cmd: uv run python gx/run_checkpoint.py
     deps:
     - path: data/processed
       hash: md5
-      md5: af39e5a0d278b03f946361d2c89c5e3b.dir
-      size: 53681724
-      nfiles: 21
+      md5: 31fa2361623472bbdeb997a15dd874fe.dir
+      size: 53708848
+      nfiles: 22
     - path: gx/run_checkpoint.py
       hash: md5
       md5: a297ed2664d59465c91106086e0cfcbb
       size: 10757
     - path: params.yaml
       hash: md5
-      md5: ce501f9aca52ba548b7b1e0cacffc55a
-      size: 1181
+      md5: c3131df46657d5324b0908634c3b447f
+      size: 1215
     - path: src/data/validate_opensky_data.py
       hash: md5
       md5: b3322831f72c389d2f3ecb72bbe41f5c
@@ -97,9 +97,9 @@ stages:
     outs:
     - path: gx/uncommitted
       hash: md5
-      md5: 41d063161f4e547226601e0ba305d395.dir
-      size: 4444916
-      nfiles: 30
+      md5: aa300ba4631ea7930df357ba0e743d41.dir
+      size: 4543114
+      nfiles: 32
     - path: reports/validation/opensky_validation.json
       hash: md5
       md5: 205b32198ee9d9900ca862ac3faf566a
@@ -109,19 +109,20 @@ stages:
     deps:
     - path: data/processed
       hash: md5
-      md5: af39e5a0d278b03f946361d2c89c5e3b.dir
-      size: 53681724
-      nfiles: 21
+      md5: 31fa2361623472bbdeb997a15dd874fe.dir
+      size: 53708848
+      nfiles: 22
     - path: params.yaml
       hash: md5
-      md5: ce501f9aca52ba548b7b1e0cacffc55a
-      size: 1181
+      md5: c3131df46657d5324b0908634c3b447f
+      size: 1215
     - path: src/data/test_opensky_data.py
       hash: md5
-      md5: 87e80b2e969674679deb8c89331e2eff
-      size: 8703
+      md5: ba65fd70952da57da59eee44f13200da
+      size: 11660
     params:
       params.yaml:
+        test_data.drift_share: 0.7
         test_data.drop_columns:
         - icao24
         - callsign
@@ -134,6 +135,7 @@ stages:
         - source_snapshot
         - event_time_utc
         - captured_at_utc
+        test_data.min_rows: 30
         test_data.processed_dir: data/processed
         test_data.reference_dir: data/reference/opensky
         test_data.reference_file: states_reference.csv
@@ -142,11 +144,11 @@ stages:
     outs:
     - path: data/reference
       hash: md5
-      md5: 6ad472dd8aceadb298d51ca78762a548.dir
-      size: 15568
+      md5: c442b98d342a9aa8ccf602d187cb9c17.dir
+      size: 13737
       nfiles: 1
     - path: reports/evidently
       hash: md5
-      md5: 9a8c532dbbd86daaeaf0c3c44e513c8c.dir
-      size: 4210536
+      md5: 1b9f1d0789c1c9d8a6903e88f0868d98.dir
+      size: 4181537
       nfiles: 2
