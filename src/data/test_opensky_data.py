@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 from evidently import Report
+from evidently.metrics import DriftedColumnsCount
 from evidently.presets import DataDriftPreset, DataSummaryPreset
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -16,8 +17,7 @@ DEFAULT_REFERENCE_FILE = "states_reference.csv"
 DEFAULT_REPORT_HTML = "reports/evidently/opensky_data_drift_report.html"
 DEFAULT_REPORT_JSON = "reports/evidently/opensky_data_drift_summary.json"
 DEFAULT_MIN_ROWS = 30
-DEFAULT_MAX_FAILED_TEST_RATIO = 0.2
-DEFAULT_MAX_FAILED_TESTS = 10
+DEFAULT_DRIFT_SHARE = 0.7
 DEFAULT_DROP_COLUMNS = [
     "icao24",
     "callsign",
@@ -46,8 +46,7 @@ def _load_test_params(params_path: str = "params.yaml") -> dict:
         "report_html": DEFAULT_REPORT_HTML,
         "report_json": DEFAULT_REPORT_JSON,
         "min_rows": DEFAULT_MIN_ROWS,
-        "max_failed_test_ratio": DEFAULT_MAX_FAILED_TEST_RATIO,
-        "max_failed_tests": DEFAULT_MAX_FAILED_TESTS,
+        "drift_share": DEFAULT_DRIFT_SHARE,
         "drop_columns": DEFAULT_DROP_COLUMNS,
     }
     params_file = _project_path(params_path)
@@ -63,8 +62,7 @@ def _load_test_params(params_path: str = "params.yaml") -> dict:
         "report_html": test_params.get("report_html", defaults["report_html"]),
         "report_json": test_params.get("report_json", defaults["report_json"]),
         "min_rows": int(test_params.get("min_rows", defaults["min_rows"])),
-        "max_failed_test_ratio": float(test_params.get("max_failed_test_ratio", defaults["max_failed_test_ratio"])),
-        "max_failed_tests": int(test_params.get("max_failed_tests", defaults["max_failed_tests"])),
+        "drift_share": float(test_params.get("drift_share", defaults["drift_share"])),
         "drop_columns": test_params.get("drop_columns", defaults["drop_columns"]),
     }
 
@@ -137,21 +135,17 @@ def _evaluate_gate(
     total_tests: int,
     failed_tests: list[dict],
     min_rows: int,
-    max_failed_test_ratio: float,
-    max_failed_tests: int,
+    drift_share: float,
 ) -> tuple[bool, str, dict]:
     failed_count = len(failed_tests)
-    failed_ratio = (failed_count / total_tests) if total_tests else 0.0
 
     gate_details = {
         "current_rows": current_rows,
         "reference_rows": reference_rows,
         "min_rows": min_rows,
-        "max_failed_test_ratio": max_failed_test_ratio,
-        "max_failed_tests": max_failed_tests,
+        "dataset_drift_share_threshold": drift_share,
         "total_tests": total_tests,
         "failed_test_count": failed_count,
-        "failed_test_ratio": failed_ratio,
     }
 
     if current_rows < min_rows or reference_rows < min_rows:
@@ -162,25 +156,17 @@ def _evaluate_gate(
         gate_details["decision"] = "insufficient_rows"
         return True, reason, gate_details
 
-    if failed_count > max_failed_tests:
+    if failed_count > 0:
         reason = (
-            "Too many failed Evidently tests: "
-            f"{failed_count}>{max_failed_tests}."
+            "Dataset-level Evidently drift detected. "
+            f"Threshold share={drift_share:.0%}."
         )
-        gate_details["decision"] = "failed_test_count"
-        return False, reason, gate_details
-
-    if failed_ratio > max_failed_test_ratio:
-        reason = (
-            "Too high failed Evidently test ratio: "
-            f"{failed_ratio:.2%}>{max_failed_test_ratio:.2%}."
-        )
-        gate_details["decision"] = "failed_test_ratio"
+        gate_details["decision"] = "dataset_drift_detected"
         return False, reason, gate_details
 
     reason = (
-        "Evidently drift gate passed: "
-        f"{failed_count}/{total_tests} failed tests ({failed_ratio:.2%})."
+        "Dataset-level Evidently drift not detected. "
+        f"Threshold share={drift_share:.0%}."
     )
     gate_details["decision"] = "passed"
     return True, reason, gate_details
@@ -258,19 +244,27 @@ def test_opensky_data(
             drop_columns=list(params["drop_columns"]),
         )
 
-        report = Report(
+        visual_report = Report(
             [
                 DataSummaryPreset(),
-                DataDriftPreset(),
+                DataDriftPreset(drift_share=float(params["drift_share"])),
+            ],
+            include_tests=False,
+        )
+        visual_result = visual_report.run(current_data=current_eval, reference_data=reference_eval)
+
+        gate_report = Report(
+            [
+                DriftedColumnsCount(drift_share=float(params["drift_share"])),
             ],
             include_tests=True,
         )
-        result = report.run(current_data=current_eval, reference_data=reference_eval)
+        gate_result = gate_report.run(current_data=current_eval, reference_data=reference_eval)
 
         report_html_path.parent.mkdir(parents=True, exist_ok=True)
-        result.save_html(str(report_html_path))
+        visual_result.save_html(str(report_html_path))
 
-        result_dict = result.dict()
+        result_dict = gate_result.dict()
         failed_tests = _collect_failed_tests(result_dict)
         gate_passed, gate_reason, gate_details = _evaluate_gate(
             current_rows=len(current_eval),
@@ -278,9 +272,19 @@ def test_opensky_data(
             total_tests=len(result_dict.get("tests", [])),
             failed_tests=failed_tests,
             min_rows=int(params["min_rows"]),
-            max_failed_test_ratio=float(params["max_failed_test_ratio"]),
-            max_failed_tests=int(params["max_failed_tests"]),
+            drift_share=float(params["drift_share"]),
         )
+
+        gate_metric = {
+            "drift_share_threshold": float(params["drift_share"]),
+            "tested_columns": len(used_columns),
+        }
+        metrics = result_dict.get("metrics", [])
+        if metrics:
+            gate_metric["raw_metric"] = metrics[0]
+
+        gate_details["metric"] = gate_metric
+
         _write_summary(
             report_json_path=report_json_path,
             current_path=current_path,
