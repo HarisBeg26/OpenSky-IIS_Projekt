@@ -28,17 +28,17 @@ stages:
     outs:
     - path: data/raw
       hash: md5
-      md5: b2e8534f720dc74d9a7889d90384404c.dir
-      size: 34345082
-      nfiles: 25
+      md5: 6dd709a33aa8b0a868c68735aca93df8.dir
+      size: 34349540
+      nfiles: 26
   preprocess:
     cmd: uv run python main.py preprocess
     deps:
     - path: data/raw
       hash: md5
-      md5: b2e8534f720dc74d9a7889d90384404c.dir
-      size: 34345082
-      nfiles: 25
+      md5: 6dd709a33aa8b0a868c68735aca93df8.dir
+      size: 34349540
+      nfiles: 26
     - path: main.py
       hash: md5
       md5: 5adbe7c7a3f989f6400d61379a2804e1
@@ -60,17 +60,17 @@ stages:
     outs:
     - path: data/processed
       hash: md5
-      md5: 47777710e3cfdeab201ccd90afe282d0.dir
-      size: 53740502
-      nfiles: 26
+      md5: d9e0ce9b6fdb52ad81e5f9ffef7e3755.dir
+      size: 53747862
+      nfiles: 27
   validate:
     cmd: uv run python gx/run_checkpoint.py
     deps:
     - path: data/processed
       hash: md5
-      md5: 47777710e3cfdeab201ccd90afe282d0.dir
-      size: 53740502
-      nfiles: 26
+      md5: d9e0ce9b6fdb52ad81e5f9ffef7e3755.dir
+      size: 53747862
+      nfiles: 27
     - path: gx/run_checkpoint.py
       hash: md5
       md5: a297ed2664d59465c91106086e0cfcbb
@@ -97,9 +97,9 @@ stages:
     outs:
     - path: gx/uncommitted
       hash: md5
-      md5: 4105621ae8ab6dd21e0fdf8a08651218.dir
-      size: 4935902
-      nfiles: 40
+      md5: 4782103b77c21cd26698fa9e5d4ab49c.dir
+      size: 5034099
+      nfiles: 42
     - path: reports/validation/opensky_validation.json
       hash: md5
       md5: 205b32198ee9d9900ca862ac3faf566a
@@ -109,9 +109,9 @@ stages:
     deps:
     - path: data/processed
       hash: md5
-      md5: 47777710e3cfdeab201ccd90afe282d0.dir
-      size: 53740502
-      nfiles: 26
+      md5: d9e0ce9b6fdb52ad81e5f9ffef7e3755.dir
+      size: 53747862
+      nfiles: 27
     - path: params.yaml
       hash: md5
       md5: c3131df46657d5324b0908634c3b447f
@@ -144,11 +144,11 @@ stages:
     outs:
     - path: data/reference
       hash: md5
-      md5: d073584a6aef2bafbe0a947f5fdcd564.dir
-      size: 2751
+      md5: 31e8c49a89228e225549324140a12138.dir
+      size: 3814
       nfiles: 1
     - path: reports/evidently
       hash: md5
-      md5: acbae9e586e6716499d47e91c55be1ec.dir
-      size: 4095865
+      md5: f37b038dc3756c1ca43b06f875a1b73b.dir
+      size: 4100209
       nfiles: 2
