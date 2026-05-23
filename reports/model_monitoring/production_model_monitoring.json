@@ -1,0 +1,128 @@
+{
+  "status": "warn",
+  "generated_at_utc": "2026-05-23T15:56:53.323837+00:00",
+  "checks": [
+    {
+      "name": "model_artifacts",
+      "status": "ok",
+      "message": "All expected model artifacts are present."
+    },
+    {
+      "name": "model_quality",
+      "status": "ok",
+      "message": "Model metrics are within thresholds.",
+      "values": {
+        "mae_latitude": 0.7162044650268552,
+        "mae_longitude": 4.920325623188019,
+        "on_ground_accuracy": 0.975
+      }
+    },
+    {
+      "name": "production_data",
+      "status": "warn",
+      "message": "Latest processed snapshot age is 955.86 hours.",
+      "values": {
+        "age_hours": 955.8629224118921,
+        "max_age_hours": 72.0
+      }
+    }
+  ],
+  "models": [
+    {
+      "name": "on_ground_lstm.keras",
+      "size_bytes": 287042,
+      "updated_at_utc": "2026-05-23T15:53:42.498413+00:00"
+    },
+    {
+      "name": "on_ground_lstm.onnx",
+      "size_bytes": 89601,
+      "updated_at_utc": "2026-05-23T15:53:45.420332+00:00"
+    },
+    {
+      "name": "preprocessors.pkl",
+      "size_bytes": 1399,
+      "updated_at_utc": "2026-05-23T15:53:45.422339+00:00"
+    },
+    {
+      "name": "trajectory_lstm.keras",
+      "size_bytes": 434728,
+      "updated_at_utc": "2026-05-23T15:53:42.441915+00:00"
+    },
+    {
+      "name": "trajectory_lstm.onnx",
+      "size_bytes": 137141,
+      "updated_at_utc": "2026-05-23T15:53:44.987564+00:00"
+    }
+  ],
+  "training_metrics": {
+    "training_sequences": 1916,
+    "test_sequences": 480,
+    "window_size": 2,
+    "feature_columns": [
+      "longitude",
+      "latitude",
+      "baro_altitude",
+      "velocity",
+      "true_track",
+      "vertical_rate",
+      "geo_altitude",
+      "on_ground",
+      "spi",
+      "position_source"
+    ],
+    "mlflow": {
+      "tracking_uri": "https://dagshub.com/HarisBeg26/OpenSky-IIS_Projekt.mlflow",
+      "experiment_name": "OpenSky-IIS_Projekt_train"
+    },
+    "models": {
+      "trajectory_lstm": {
+        "task": "Predict next latitude and longitude from a sequence of aircraft states.",
+        "type": "TensorFlow Keras LSTM",
+        "target_columns": [
+          "target_next_latitude",
+          "target_next_longitude"
+        ],
+        "epochs_trained": 20,
+        "mae_latitude": 0.7162044650268552,
+        "mae_longitude": 4.920325623188019,
+        "rmse_latitude": 1.0244977540673776,
+        "rmse_longitude": 5.981819650803824,
+        "final_validation_loss": 0.011326047591865063
+      },
+      "on_ground_lstm": {
+        "task": "Predict whether the aircraft will be on the ground in the next state.",
+        "type": "TensorFlow Keras LSTM",
+        "target_column": "target_next_on_ground",
+        "epochs_trained": 4,
+        "accuracy": 0.975,
+        "f1": 0.3333333333333333,
+        "final_validation_loss": 0.17160780727863312
+      }
+    },
+    "params": {
+      "test_size": 0.2,
+      "max_sequences": 12000,
+      "window_size": 2,
+      "random_state": 42,
+      "lstm_units": 64,
+      "dense_units": 32,
+      "dropout": 0.2,
+      "epochs": 20,
+      "batch_size": 64,
+      "validation_split": 0.2,
+      "patience": 4,
+      "onnx_opset": 13
+    },
+    "onnx": {
+      "trajectory_lstm": "models\\opensky\\trajectory_lstm.onnx",
+      "on_ground_lstm": "models\\opensky\\on_ground_lstm.onnx",
+      "opset": 13
+    }
+  },
+  "latest_snapshot": {
+    "file": "states_processed_20260413T200506Z.csv",
+    "rows": 10475,
+    "aircraft": 10475,
+    "countries": 99
+  }
+}

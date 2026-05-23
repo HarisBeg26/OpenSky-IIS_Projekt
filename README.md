@@ -14,8 +14,13 @@ Razvit je ponovljiv cevovod, ki:
 - pripravi kumulativno zgodovino `states_history.csv`,
 - izvede Great Expectations validacijo nad obdelanimi podatki,
 - izvede Evidently drift test med referencnim in trenutnim snapshotom,
+- nauci dva napovedna modela z nevronskimi mrezami,
+- pripravi produkcijsko monitoring porocilo modelov,
+- servira uporabniski in administratorski vmesnik prek FastAPI,
+- zgradi Docker sliko za namestitev v produkcijo,
 - shrani Great Expectations porocilo v `reports/validation/opensky_validation.json`,
 - shrani Evidently HTML porocilo v `reports/evidently/opensky_data_drift_report.html`,
+- shrani metrike ucenja v `reports/model_training/opensky_metrics.json`,
 - ob uspesnem Evidently testu posodobi referencni snapshot v `data/reference/opensky`.
 
 ## Pomembna opomba o verzijah
@@ -82,11 +87,50 @@ test_data:
     - "source_snapshot"
     - "event_time_utc"
     - "captured_at_utc"
+
+train:
+  history_file: "data/processed/states_history.csv"
+  models_dir: "models/opensky"
+  metrics_path: "reports/model_training/opensky_metrics.json"
+  mlflow_tracking_uri: "https://dagshub.com/HarisBeg26/OpenSky-IIS_Projekt.mlflow"
+  mlflow_experiment_name: "OpenSky-IIS_Projekt_train"
+  test_size: 0.2
+  max_sequences: 12000
+  window_size: 2
+  random_state: 42
+  lstm_units: 64
+  dense_units: 32
+  dropout: 0.2
+  epochs: 20
+  batch_size: 64
+  validation_split: 0.2
+  patience: 4
+  onnx_opset: 13
+  feature_columns:
+    - "longitude"
+    - "latitude"
+    - "baro_altitude"
+    - "velocity"
+    - "true_track"
+    - "vertical_rate"
+    - "geo_altitude"
+    - "on_ground"
+    - "spi"
+    - "position_source"
+
+monitoring:
+  report_path: "reports/model_monitoring/production_model_monitoring.json"
+  processed_dir: "data/processed"
+  models_dir: "models/opensky"
+  training_metrics: "reports/model_training/opensky_metrics.json"
+  max_trajectory_mae: 5.0
+  min_on_ground_accuracy: 0.85
+  max_data_age_hours: 72
 ```
 
 ## Faze DVC
 
-Projekt ima stiri glavne faze:
+Projekt ima sest glavnih faz:
 
 1. `fetch`
    Prenese najnovejsi OpenSky snapshot in ga shrani v `data/raw/states_<timestamp>.json`.
@@ -99,6 +143,12 @@ Projekt ima stiri glavne faze:
 
 4. `test_data`
    Pozene Evidently drift test nad zadnjim obdelanim snapshotom in referencnim snapshotom.
+
+5. `train`
+   Nauci dva napovedna modela nad `states_history.csv` in shrani modele ter metrike.
+
+6. `monitor`
+   Ustvari produkcijsko porocilo o stanju modelov, podatkov in metrik.
 
 Vizualno je tok naslednji:
 
@@ -116,6 +166,16 @@ Vizualno je tok naslednji:
    +----------+   +-----------+
    | validate |   | test_data |
    +----------+   +-----------+
+           \       /
+            v     v
+          +---------+
+          |  train  |
+          +---------+
+               |
+               v
+          +---------+
+          | monitor |
+          +---------+
 ```
 
 ## Great Expectations za OpenSky
@@ -207,16 +267,117 @@ test_data:
 
 S tem poskrbimo, da se drift test pozene le ob spremembah obdelanih OpenSky snapshotov ali konfiguracije testiranja. Referencni snapshot se ob uspesnem testu osvezi, Evidently porocila pa se ohranijo v `reports/evidently`.
 
+## Ucenje napovednih modelov za OpenSky
+
+Za OpenSky imamo dve razlicni napovedni nalogi, obe izvedeni z rekurentnimi nevronskimi mrezami v TensorFlow/Keras:
+
+- `trajectory_lstm` uporablja LSTM regresijski model in napoveduje naslednjo pozicijo letala, torej `target_next_latitude` in `target_next_longitude`.
+- `on_ground_lstm` uporablja LSTM klasifikacijski model in napoveduje, ali bo letalo v naslednjem stanju na tleh (`target_next_on_ground`).
+
+Obe nalogi uporabljata zgodovinske OpenSky zapise, zdruzene po `icao24` in urejene po casu. Skripta [train.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/src/model/train.py:1) iz posameznih letal ustvari drseca zaporedja oblike "zadnjih N stanj -> naslednje stanje", nato izvede casovni train/test razcep. Modela sta shranjena kot `.keras` in `.onnx` datoteki v `models/opensky`, predprocesorji pa v `models/opensky/preprocessors.pkl`. Metrike so zapisane v `reports/model_training/opensky_metrics.json`.
+
+`train` faza je definirana tako:
+
+```yaml
+train:
+  cmd: uv run python main.py train
+  deps:
+    - main.py
+    - src/model/preprocess.py
+    - src/model/train.py
+    - data/processed
+    - gx/uncommitted
+    - reports/validation/opensky_validation.json
+    - data/reference
+    - reports/evidently/opensky_data_drift_summary.json
+    - params.yaml
+  outs:
+    - models/opensky:
+        persist: true
+  metrics:
+    - reports/model_training/opensky_metrics.json
+```
+
+S tem trening stece po predobdelavi podatkov in se ponovno izvede ob spremembi podatkov, parametrov ali modelne kode. V celotnem GitHub Actions toku se pred treningom izvedejo tudi Great Expectations in Evidently preverjanja.
+
+Ker trening uporablja TensorFlow, po posodobitvi odvisnosti najprej osvezi okolje z:
+
+```bash
+uv sync
+```
+
+Trening uporablja MLflow za sledenje eksperimentom na DagsHub:
+
+- tracking URI je nastavljen v `train.mlflow_tracking_uri`,
+- eksperiment je nastavljen v `train.mlflow_experiment_name`,
+- vsak zagon shrani parametre, metrike in artefakte modelov,
+- oba Keras modela se dodatno serializirata v ONNX format z `train.onnx_opset`,
+- modeli so hkrati verzionirani z DVC kot izhod `models/opensky`.
+
+Za GitHub Actions morata biti nastavljeni skrivnosti:
+
+- `MLFLOW_TRACKING_USERNAME`
+- `MLFLOW_TRACKING_PASSWORD`
+
+Pri DagsHub je `MLFLOW_TRACKING_USERNAME` obicajno uporabnisko ime, `MLFLOW_TRACKING_PASSWORD` pa DagsHub token.
+
+## Produkcijsko nadzorovanje modelov
+
+Skripta [monitor_models.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/src/monitoring/monitor_models.py:1) pripravi porocilo `reports/model_monitoring/production_model_monitoring.json`. V njem preverimo:
+
+- ali so prisotni pricakovani produkcijski artefakti modelov,
+- ali so metrike modelov znotraj pragov,
+- ali obstaja svezi obdelani OpenSky snapshot,
+- kaksno je skupno stanje modelov v produkciji (`ok`, `warn`, `fail`).
+
+Monitoring lahko zazenes z:
+
+```bash
+uv run python main.py monitor
+```
+
+## Uporabniski in administratorski vmesnik
+
+FastAPI aplikacija je v [src/app/main.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/src/app/main.py:1). Ponuja:
+
+- `/` operativni pogled zadnjega OpenSky snapshota z interaktivnim radarskim prikazom in tabelo letal,
+- `/admin` administratorski pogled za validacijo, drift, metrike ucenja, monitoring in modelne artefakte,
+- `/api/flights` podatke za uporabniski pogled,
+- `/api/admin/summary` zdruzen pregled kakovosti podatkov in modelov.
+
+Lokalni zagon:
+
+```bash
+uv run uvicorn src.app.main:app --reload
+```
+
+## Docker in namestitev v produkcijo
+
+Projekt vsebuje [Dockerfile](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/Dockerfile:1), ki zapakira FastAPI aplikacijo, modele, porocila in obdelane podatke v produkcijsko sliko. GitHub Actions workflow [docker.yml](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/.github/workflows/docker.yml:1) naredi:
+
+- `dvc pull` za produkcijske artefakte,
+- Docker build,
+- push slike v GitHub Container Registry,
+- opcijski klic `PRODUCTION_DEPLOY_HOOK_URL` za namestitev na izbrani produkcijski ponudnik.
+
+Lokalni Docker zagon:
+
+```bash
+docker build -t skywatch .
+docker run --rm -p 8000:8000 skywatch
+```
+
 ## GitHub Actions in DVC
 
 GitHub Actions workflow uporablja Python 3.11, regenerira `uv.lock`, izvede `uv sync --locked`, nato pa z `dvc repro` pozene celoten tok:
 
-`fetch -> preprocess -> validate -> test_data`
+`fetch -> preprocess -> validate -> test_data -> train -> monitor`
 
 Po tem:
 
 - `dvc push` shrani DVC artefakte,
 - `git add dvc.lock uv.lock` pripravi zaklepne datoteke,
+- metricni JSON-i za validacijo, trening in monitoring se dodajo v Git, da so porocila dostopna tudi po svezem klonu,
 - Great Expectations Data Docs se po uspesni validaciji lahko objavijo na Netlify.
 
 Aktualni workflow je v [fetch_data.yml](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/.github/workflows/fetch_data.yml:1).
@@ -233,6 +394,12 @@ Evidently drift test lahko zazenes neposredno:
 
 ```bash
 uv run python src/data/test_opensky_data.py
+```
+
+Napovedne modele lahko naucis neposredno:
+
+```bash
+uv run python main.py train
 ```
 
 Ali pa pozenes celoten cevovod:

@@ -62,12 +62,23 @@ jobs:
           DAGSHUB_S3_ENDPOINT_URL: ${{ vars.DAGSHUB_S3_ENDPOINT_URL }}
           DAGSHUB_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_ACCESS_KEY_ID }}
           DAGSHUB_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_SECRET_ACCESS_KEY }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
         run: |
           uv run dvc pull --allow-missing
           uv run dvc status
           uv run dvc repro
           uv run dvc push
           git add dvc.lock uv.lock
+          for metric in \
+            reports/validation/opensky_validation.json \
+            reports/model_training/opensky_metrics.json \
+            reports/model_monitoring/production_model_monitoring.json; do
+            if [ -f "$metric" ]; then
+              git add -f "$metric"
+            fi
+          done
+          find models reports -name .gitignore -print -exec git add {} \; || true
           git commit -m "Update pipeline lock files on `date` with GitHub Actions" || true
 
       - name: Push changes

@@ -11,16 +11,23 @@ dependencies = [
     "evidently>=0.7.1,<0.8.0",
     "fastapi>=0.135.1",
     "great-expectations==0.18.21",
-    "mlflow>=1.27.0",
+    "mlflow>=2.22.0,<3.0.0",
     "numpy>=1.26,<2.0",
     "pandas>=2.2,<3.0",
     "psycopg[binary]>=3.3.3",
-    "pyarrow>=23.0.1",
+    "pyarrow>=15.0.0,<20.0.0",
     "pyyaml>=6.0.2",
     "pydantic>=2.12.5",
     "python-dotenv>=1.2.2",
     "requests>=2.32.5",
     "scikit-learn>=1.8.0",
     "sqlalchemy>=2.0.48",
+    "tensorflow>=2.19.0,<2.20.0",
+    "tf2onnx>=1.16.1,<2.0.0",
     "uvicorn>=0.42.0",
+]
+
+[tool.uv]
+override-dependencies = [
+    "tensorflow-io-gcs-filesystem; sys_platform != 'win32'",
 ]

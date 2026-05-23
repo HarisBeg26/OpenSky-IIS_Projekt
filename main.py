@@ -30,6 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
     test_data.add_argument("--reference-dir", default=None, help="Optional reference dataset directory")
     test_data.add_argument("--report-html", default=None, help="Optional Evidently HTML report path")
 
+    train = subparsers.add_parser("train", help="Train OpenSky neural-network prediction models")
+    train.add_argument("--params-path", default="params.yaml", help="Training parameter file")
+
+    monitor = subparsers.add_parser("monitor", help="Generate production model monitoring report")
+    monitor.add_argument("--params-path", default="params.yaml", help="Monitoring parameter file")
+
     return parser
 
 
@@ -66,6 +72,14 @@ def main() -> None:
                 report_html=args.report_html,
             )
         )
+    if args.command == "train":
+        from src.model.train import train_opensky_models
+
+        raise SystemExit(train_opensky_models(params_path=args.params_path))
+    if args.command == "monitor":
+        from src.monitoring.monitor_models import monitor_models
+
+        raise SystemExit(monitor_models(params_path=args.params_path))
 
 
 if __name__ == "__main__":

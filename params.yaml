@@ -45,3 +45,42 @@ test_data:
     - "source_snapshot"
     - "event_time_utc"
     - "captured_at_utc"
+
+train:
+  history_file: "data/processed/states_history.csv"
+  models_dir: "models/opensky"
+  metrics_path: "reports/model_training/opensky_metrics.json"
+  mlflow_tracking_uri: "https://dagshub.com/HarisBeg26/OpenSky-IIS_Projekt.mlflow"
+  mlflow_experiment_name: "OpenSky-IIS_Projekt_train"
+  test_size: 0.2
+  max_sequences: 12000
+  window_size: 2
+  random_state: 42
+  lstm_units: 64
+  dense_units: 32
+  dropout: 0.2
+  epochs: 20
+  batch_size: 64
+  validation_split: 0.2
+  patience: 4
+  onnx_opset: 13
+  feature_columns:
+    - "longitude"
+    - "latitude"
+    - "baro_altitude"
+    - "velocity"
+    - "true_track"
+    - "vertical_rate"
+    - "geo_altitude"
+    - "on_ground"
+    - "spi"
+    - "position_source"
+
+monitoring:
+  report_path: "reports/model_monitoring/production_model_monitoring.json"
+  processed_dir: "data/processed"
+  models_dir: "models/opensky"
+  training_metrics: "reports/model_training/opensky_metrics.json"
+  max_trajectory_mae: 5.0
+  min_on_ground_accuracy: 0.85
+  max_data_age_hours: 72

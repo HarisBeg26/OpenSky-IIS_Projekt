@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SkyWatch</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body data-page="ops">
+    <header class="topbar">
+      <a class="brand" href="/">SkyWatch</a>
+      <nav>
+        <a href="/">Traffic</a>
+        <a href="/admin">Admin</a>
+      </nav>
+    </header>
+
+    <main class="shell">
+      <section class="panel intro">
+        <div>
+          <p class="eyebrow">OpenSky intelligence</p>
+          <h1>Live local airspace view</h1>
+          <p class="subtle">Latest processed OpenSky snapshot with model-aware status indicators.</p>
+        </div>
+        <div class="status-strip">
+          <span id="snapshotName">Snapshot loading</span>
+          <strong id="flightCount">0 aircraft</strong>
+        </div>
+      </section>
+
+      <section class="traffic-layout">
+        <div class="radar panel">
+          <div class="panel-title">
+            <h2>Airspace</h2>
+            <span id="radarStatus">Waiting for data</span>
+          </div>
+          <svg id="radarPlot" viewBox="0 0 900 520" role="img" aria-label="Aircraft position plot"></svg>
+        </div>
+
+        <aside class="panel">
+          <div class="panel-title">
+            <h2>Attention queue</h2>
+            <span id="watchCount">0 watch</span>
+          </div>
+          <div id="watchList" class="watch-list"></div>
+        </aside>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <h2>Aircraft table</h2>
+          <span>Latest records</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Callsign</th>
+                <th>Country</th>
+                <th>Status</th>
+                <th>Altitude</th>
+                <th>Velocity</th>
+                <th>Vertical rate</th>
+              </tr>
+            </thead>
+            <tbody id="flightTable"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

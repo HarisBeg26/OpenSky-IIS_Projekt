@@ -74,3 +74,60 @@ stages:
           persist: true
       - reports/evidently:
           persist: true
+
+  train:
+    cmd: uv run python main.py train
+    deps:
+      - main.py
+      - src/model/preprocess.py
+      - src/model/train.py
+      - data/processed
+      - gx/uncommitted
+      - reports/validation/opensky_validation.json
+      - data/reference
+      - reports/evidently/opensky_data_drift_summary.json
+      - params.yaml
+    params:
+      - train.history_file
+      - train.models_dir
+      - train.metrics_path
+      - train.mlflow_tracking_uri
+      - train.mlflow_experiment_name
+      - train.test_size
+      - train.max_sequences
+      - train.window_size
+      - train.random_state
+      - train.lstm_units
+      - train.dense_units
+      - train.dropout
+      - train.epochs
+      - train.batch_size
+      - train.validation_split
+      - train.patience
+      - train.onnx_opset
+      - train.feature_columns
+    outs:
+      - models/opensky:
+          persist: true
+    metrics:
+      - reports/model_training/opensky_metrics.json
+
+  monitor:
+    cmd: uv run python main.py monitor
+    deps:
+      - main.py
+      - src/monitoring/monitor_models.py
+      - data/processed
+      - models/opensky
+      - reports/model_training/opensky_metrics.json
+      - params.yaml
+    params:
+      - monitoring.report_path
+      - monitoring.processed_dir
+      - monitoring.models_dir
+      - monitoring.training_metrics
+      - monitoring.max_trajectory_mae
+      - monitoring.min_on_ground_accuracy
+      - monitoring.max_data_age_hours
+    metrics:
+      - reports/model_monitoring/production_model_monitoring.json

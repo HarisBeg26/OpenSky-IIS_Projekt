@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SkyWatch Admin</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body data-page="admin">
+    <header class="topbar">
+      <a class="brand" href="/">SkyWatch</a>
+      <nav>
+        <a href="/">Traffic</a>
+        <a href="/admin">Admin</a>
+      </nav>
+    </header>
+
+    <main class="shell">
+      <section class="panel intro">
+        <div>
+          <p class="eyebrow">Production control</p>
+          <h1>Model and data operations</h1>
+          <p class="subtle">Validation, drift, training metrics and production monitoring in one view.</p>
+        </div>
+        <div class="status-strip">
+          <span>Overall model status</span>
+          <strong id="overallStatus">Loading</strong>
+        </div>
+      </section>
+
+      <section class="admin-grid">
+        <article class="panel metric-card">
+          <h2>Great Expectations</h2>
+          <p id="validationStatus" class="metric-value">Loading</p>
+          <span id="validationDetail"></span>
+        </article>
+        <article class="panel metric-card">
+          <h2>Evidently drift</h2>
+          <p id="driftStatus" class="metric-value">Loading</p>
+          <span id="driftDetail"></span>
+        </article>
+        <article class="panel metric-card">
+          <h2>Trajectory LSTM</h2>
+          <p id="trajectoryMetric" class="metric-value">Loading</p>
+          <span>MAE latitude / longitude</span>
+        </article>
+        <article class="panel metric-card">
+          <h2>On-ground LSTM</h2>
+          <p id="groundMetric" class="metric-value">Loading</p>
+          <span>Accuracy and F1 score</span>
+        </article>
+      </section>
+
+      <section class="traffic-layout">
+        <div class="panel">
+          <div class="panel-title">
+            <h2>Production checks</h2>
+            <span id="checkCount">0 checks</span>
+          </div>
+          <div id="monitorChecks" class="check-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">
+            <h2>Model registry</h2>
+            <span>Local production artifacts</span>
+          </div>
+          <div id="modelInventory" class="check-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
