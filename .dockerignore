@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+.uv-cache
+__pycache__
+*.pyc
+.dvc/cache
+data/raw
+data/reference
+gx/uncommitted/validations
+notebooks
+tests

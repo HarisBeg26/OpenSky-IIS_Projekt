@@ -1,2 +1,7 @@
 uncommitted/
 __pycache__/
+great_expectations.yml
+checkpoints/
+expectations/
+plugins/
+profilers/

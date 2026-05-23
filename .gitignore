@@ -1,5 +1,12 @@
 .env
+.venv/
+.uv-cache/
 __pycache__/
 *.pyc
 reports/validation/
 reports/evidently/
+gx/great_expectations.yml
+gx/checkpoints/
+gx/expectations/
+gx/plugins/
+gx/profilers/
