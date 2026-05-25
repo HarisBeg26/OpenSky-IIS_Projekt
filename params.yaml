@@ -55,6 +55,10 @@ train:
   metrics_path: "reports/model_training/opensky_metrics.json"
   mlflow_tracking_uri: "https://dagshub.com/HarisBeg26/OpenSky-IIS_Projekt.mlflow"
   mlflow_experiment_name: "OpenSky-IIS_Projekt_train"
+  register_models: true
+  trajectory_registered_model_name: "OpenSkyTrajectoryLSTM"
+  on_ground_registered_model_name: "OpenSkyOnGroundLSTM"
+  await_model_registration_seconds: 120
   test_size: 0.2
   max_sequences: 12000
   window_size: 2

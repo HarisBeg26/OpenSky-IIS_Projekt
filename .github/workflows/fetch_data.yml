@@ -70,14 +70,6 @@ jobs:
           uv run dvc repro
           uv run dvc push
           git add dvc.lock uv.lock
-          for metric in \
-            reports/validation/opensky_validation.json \
-            reports/model_training/opensky_metrics.json \
-            reports/model_monitoring/production_model_monitoring.json; do
-            if [ -f "$metric" ]; then
-              git add -f "$metric"
-            fi
-          done
           find models reports -name .gitignore -print -exec git add {} \; || true
           git commit -m "Update pipeline lock files on `date` with GitHub Actions" || true
 

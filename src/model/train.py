@@ -24,6 +24,10 @@ DEFAULT_MODELS_DIR = "models/opensky"
 DEFAULT_METRICS_PATH = "reports/model_training/opensky_metrics.json"
 DEFAULT_MLFLOW_TRACKING_URI = "https://dagshub.com/HarisBeg26/OpenSky-IIS_Projekt.mlflow"
 DEFAULT_MLFLOW_EXPERIMENT_NAME = "OpenSky-IIS_Projekt_train"
+DEFAULT_REGISTER_MODELS = True
+DEFAULT_TRAJECTORY_REGISTERED_MODEL_NAME = "OpenSkyTrajectoryLSTM"
+DEFAULT_ON_GROUND_REGISTERED_MODEL_NAME = "OpenSkyOnGroundLSTM"
+DEFAULT_AWAIT_MODEL_REGISTRATION_SECONDS = 120
 DEFAULT_FEATURE_COLUMNS = [
     "longitude",
     "latitude",
@@ -50,6 +54,10 @@ def _load_train_params(params_path: str = "params.yaml") -> dict:
         "metrics_path": DEFAULT_METRICS_PATH,
         "mlflow_tracking_uri": DEFAULT_MLFLOW_TRACKING_URI,
         "mlflow_experiment_name": DEFAULT_MLFLOW_EXPERIMENT_NAME,
+        "register_models": DEFAULT_REGISTER_MODELS,
+        "trajectory_registered_model_name": DEFAULT_TRAJECTORY_REGISTERED_MODEL_NAME,
+        "on_ground_registered_model_name": DEFAULT_ON_GROUND_REGISTERED_MODEL_NAME,
+        "await_model_registration_seconds": DEFAULT_AWAIT_MODEL_REGISTRATION_SECONDS,
         "feature_columns": DEFAULT_FEATURE_COLUMNS,
         "test_size": 0.2,
         "max_sequences": 12000,
@@ -77,6 +85,19 @@ def _load_train_params(params_path: str = "params.yaml") -> dict:
         "metrics_path": train_params.get("metrics_path", defaults["metrics_path"]),
         "mlflow_tracking_uri": train_params.get("mlflow_tracking_uri", defaults["mlflow_tracking_uri"]),
         "mlflow_experiment_name": train_params.get("mlflow_experiment_name", defaults["mlflow_experiment_name"]),
+        "register_models": _as_bool(train_params.get("register_models", defaults["register_models"])),
+        "trajectory_registered_model_name": train_params.get(
+            "trajectory_registered_model_name", defaults["trajectory_registered_model_name"]
+        ),
+        "on_ground_registered_model_name": train_params.get(
+            "on_ground_registered_model_name", defaults["on_ground_registered_model_name"]
+        ),
+        "await_model_registration_seconds": int(
+            train_params.get(
+                "await_model_registration_seconds",
+                defaults["await_model_registration_seconds"],
+            )
+        ),
         "feature_columns": train_params.get("feature_columns", defaults["feature_columns"]),
         "test_size": float(train_params.get("test_size", defaults["test_size"])),
         "max_sequences": int(train_params.get("max_sequences", defaults["max_sequences"])),
@@ -93,6 +114,14 @@ def _load_train_params(params_path: str = "params.yaml") -> dict:
     }
 
 
+def _as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
 def _load_tensorflow():
     try:
         import tensorflow as tf
@@ -106,6 +135,7 @@ def _load_tensorflow():
 def _load_mlflow():
     try:
         import mlflow
+        import mlflow.keras  # noqa: F401
     except ImportError as exc:
         raise ImportError("MLflow is required for experiment tracking. Run `uv sync`.") from exc
     return mlflow
@@ -237,6 +267,51 @@ def _write_pickle(path: Path, value: object) -> None:
         pickle.dump(value, file)
 
 
+def _model_info_to_dict(model_info) -> dict[str, object]:
+    return {
+        "artifact_path": getattr(model_info, "artifact_path", None),
+        "model_uri": getattr(model_info, "model_uri", None),
+        "run_id": getattr(model_info, "run_id", None),
+        "registered_model_version": getattr(model_info, "registered_model_version", None),
+    }
+
+
+def _log_and_register_mlflow_models(
+    mlflow,
+    trajectory_model,
+    ground_model,
+    params: dict,
+    input_example: np.ndarray,
+) -> dict[str, object]:
+    registered_model_names = {
+        "trajectory_lstm": params["trajectory_registered_model_name"],
+        "on_ground_lstm": params["on_ground_registered_model_name"],
+    }
+    registration_enabled = params["register_models"]
+
+    trajectory_info = mlflow.keras.log_model(
+        trajectory_model,
+        artifact_path="trajectory_lstm_mlflow_model",
+        registered_model_name=registered_model_names["trajectory_lstm"] if registration_enabled else None,
+        await_registration_for=params["await_model_registration_seconds"],
+        input_example=input_example,
+    )
+    ground_info = mlflow.keras.log_model(
+        ground_model,
+        artifact_path="on_ground_lstm_mlflow_model",
+        registered_model_name=registered_model_names["on_ground_lstm"] if registration_enabled else None,
+        await_registration_for=params["await_model_registration_seconds"],
+        input_example=input_example,
+    )
+
+    return {
+        "enabled": registration_enabled,
+        "registered_model_names": registered_model_names,
+        "trajectory_lstm": _model_info_to_dict(trajectory_info),
+        "on_ground_lstm": _model_info_to_dict(ground_info),
+    }
+
+
 def _export_keras_model_to_onnx(
     model,
     output_path: Path,
@@ -353,6 +428,11 @@ def train_opensky_models(params_path: str = "params.yaml") -> int:
                 "mlflow": {
                     "tracking_uri": params["mlflow_tracking_uri"],
                     "experiment_name": params["mlflow_experiment_name"],
+                    "model_registry": {
+                        "enabled": params["register_models"],
+                        "trajectory_registered_model_name": params["trajectory_registered_model_name"],
+                        "on_ground_registered_model_name": params["on_ground_registered_model_name"],
+                    },
                 },
                 "models": {
                     "trajectory_lstm": {
@@ -434,6 +514,13 @@ def train_opensky_models(params_path: str = "params.yaml") -> int:
                     "window_size": params["window_size"],
                 },
             )
+            metrics["mlflow"]["model_registry"] = _log_and_register_mlflow_models(
+                mlflow,
+                trajectory_model,
+                ground_model,
+                params,
+                X_test[:1],
+            )
 
             metrics_path = _project_path(params["metrics_path"])
             metrics_path.parent.mkdir(parents=True, exist_ok=True)
@@ -450,6 +537,11 @@ def train_opensky_models(params_path: str = "params.yaml") -> int:
         print(f"Trajectory MAE latitude: {metrics['models']['trajectory_lstm']['mae_latitude']:.6f}")
         print(f"Trajectory MAE longitude: {metrics['models']['trajectory_lstm']['mae_longitude']:.6f}")
         print(f"On-ground accuracy: {metrics['models']['on_ground_lstm']['accuracy']:.6f}")
+        if params["register_models"]:
+            print(
+                "Registered MLflow models: "
+                f"{params['trajectory_registered_model_name']}, {params['on_ground_registered_model_name']}"
+            )
         print(f"Saved ONNX models with opset: {params['onnx_opset']}")
         print(f"Saved models to: {models_dir}")
         print(f"Saved metrics to: {metrics_path}")
@@ -474,6 +566,9 @@ def _log_mlflow_params(mlflow, params: dict, feature_columns: list[str], trainin
             "validation_split": params["validation_split"],
             "patience": params["patience"],
             "onnx_opset": params["onnx_opset"],
+            "register_models": params["register_models"],
+            "trajectory_registered_model_name": params["trajectory_registered_model_name"],
+            "on_ground_registered_model_name": params["on_ground_registered_model_name"],
             "feature_columns": ",".join(feature_columns),
             "training_sequences": training_sequences,
             "test_sequences": test_sequences,

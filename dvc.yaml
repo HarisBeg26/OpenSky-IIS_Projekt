@@ -96,6 +96,10 @@ stages:
       - train.metrics_path
       - train.mlflow_tracking_uri
       - train.mlflow_experiment_name
+      - train.register_models
+      - train.trajectory_registered_model_name
+      - train.on_ground_registered_model_name
+      - train.await_model_registration_seconds
       - train.test_size
       - train.max_sequences
       - train.window_size
