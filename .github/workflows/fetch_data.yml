@@ -65,7 +65,7 @@ jobs:
           MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
           MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
         run: |
-          uv run dvc pull --allow-missing
+          uv run dvc pull --allow-missing --force
           uv run dvc status
           uv run dvc repro
           uv run dvc push

@@ -47,7 +47,7 @@ jobs:
             uv run dvc remote modify origin endpointurl "$DAGSHUB_S3_ENDPOINT_URL"
             uv run dvc remote modify origin --local access_key_id "$DAGSHUB_ACCESS_KEY_ID"
             uv run dvc remote modify origin --local secret_access_key "$DAGSHUB_SECRET_ACCESS_KEY"
-            uv run dvc pull --allow-missing
+            uv run dvc pull --allow-missing --force
           else
             echo "DAGSHUB_S3_ENDPOINT_URL is not set. Building image without DVC artifacts."
           fi
