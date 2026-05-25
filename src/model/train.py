@@ -281,7 +281,6 @@ def _log_and_register_mlflow_models(
     trajectory_model,
     ground_model,
     params: dict,
-    input_example: np.ndarray,
 ) -> dict[str, object]:
     registered_model_names = {
         "trajectory_lstm": params["trajectory_registered_model_name"],
@@ -294,14 +293,12 @@ def _log_and_register_mlflow_models(
         artifact_path="trajectory_lstm_mlflow_model",
         registered_model_name=registered_model_names["trajectory_lstm"] if registration_enabled else None,
         await_registration_for=params["await_model_registration_seconds"],
-        input_example=input_example,
     )
     ground_info = mlflow.keras.log_model(
         ground_model,
         artifact_path="on_ground_lstm_mlflow_model",
         registered_model_name=registered_model_names["on_ground_lstm"] if registration_enabled else None,
         await_registration_for=params["await_model_registration_seconds"],
-        input_example=input_example,
     )
 
     return {
@@ -519,7 +516,6 @@ def train_opensky_models(params_path: str = "params.yaml") -> int:
                 trajectory_model,
                 ground_model,
                 params,
-                X_test[:1],
             )
 
             metrics_path = _project_path(params["metrics_path"])
