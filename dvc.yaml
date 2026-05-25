@@ -9,6 +9,9 @@ stages:
       - fetch.url
       - fetch.output_dir
       - fetch.timeout_seconds
+      - fetch.retries
+      - fetch.retry_backoff_seconds
+      - fetch.allow_cached_on_failure
       - fetch.bbox
     outs:
       - data/raw:
