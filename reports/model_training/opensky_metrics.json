@@ -1,0 +1,65 @@
+{
+  "training_sequences": 9600,
+  "test_sequences": 2400,
+  "window_size": 2,
+  "feature_columns": [
+    "longitude",
+    "latitude",
+    "baro_altitude",
+    "velocity",
+    "true_track",
+    "vertical_rate",
+    "geo_altitude",
+    "on_ground",
+    "spi",
+    "position_source"
+  ],
+  "mlflow": {
+    "tracking_uri": "https://dagshub.com/HarisBeg26/OpenSky-IIS_Projekt.mlflow",
+    "experiment_name": "OpenSky-IIS_Projekt_train"
+  },
+  "models": {
+    "trajectory_lstm": {
+      "task": "Predict next latitude and longitude from a sequence of aircraft states.",
+      "type": "TensorFlow Keras LSTM",
+      "target_columns": [
+        "target_next_latitude",
+        "target_next_longitude"
+      ],
+      "epochs_trained": 9,
+      "mae_latitude": 4.591752575882607,
+      "mae_longitude": 15.338467210055008,
+      "rmse_latitude": 6.805838032095033,
+      "rmse_longitude": 26.453174765136133,
+      "final_validation_loss": 0.16930928826332092
+    },
+    "on_ground_lstm": {
+      "task": "Predict whether the aircraft will be on the ground in the next state.",
+      "type": "TensorFlow Keras LSTM",
+      "target_column": "target_next_on_ground",
+      "epochs_trained": 4,
+      "accuracy": 0.9716666666666667,
+      "f1": 0.0,
+      "final_validation_loss": 0.3064122200012207
+    }
+  },
+  "params": {
+    "test_size": 0.2,
+    "max_sequences": 12000,
+    "window_size": 2,
+    "random_state": 42,
+    "lstm_units": 64,
+    "dense_units": 32,
+    "dropout": 0.2,
+    "epochs": 20,
+    "batch_size": 64,
+    "validation_split": 0.2,
+    "patience": 4,
+    "onnx_opset": 13
+  },
+  "onnx": {
+    "trajectory_lstm": "models/opensky/trajectory_lstm.onnx",
+    "on_ground_lstm": "models/opensky/on_ground_lstm.onnx",
+    "opset": 13
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "success": true,
+  "checkpoint_name": "opensky_history_checkpoint",
+  "expectation_suite_name": "opensky_history_suite",
+  "validation_file": "/home/runner/work/OpenSky-IIS_Projekt/OpenSky-IIS_Projekt/data/processed/states_history.csv",
+  "data_docs": {
+    "local_site": "file:///home/runner/work/OpenSky-IIS_Projekt/OpenSky-IIS_Projekt/gx/uncommitted/data_docs/local_site/index.html"
+  }
+}
