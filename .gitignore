@@ -1,10 +1,14 @@
 .env
 .venv/
 .uv-cache/
+frontend/node_modules/
+frontend/dist/
 __pycache__/
 *.pyc
 reports/validation/
 reports/evidently/
+reports/model_training/
+reports/model_monitoring/
 gx/great_expectations.yml
 gx/checkpoints/
 gx/expectations/
