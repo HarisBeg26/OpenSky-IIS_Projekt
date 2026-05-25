@@ -9,6 +9,7 @@ reports/validation/
 reports/evidently/
 reports/model_training/
 reports/model_monitoring/
+reports/model_registry/
 gx/great_expectations.yml
 gx/checkpoints/
 gx/expectations/

@@ -338,22 +338,53 @@ uv run python main.py monitor
 
 ## Uporabniski in administratorski vmesnik
 
-FastAPI aplikacija je v [src/app/main.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/src/app/main.py:1). Ponuja:
+Uporabniski vmesnik je locena React aplikacija v `frontend/`, FastAPI pa ostane inteligentni API servis v [src/app/main.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/src/app/main.py:1).
 
-- `/` operativni pogled zadnjega OpenSky snapshota z interaktivnim radarskim prikazom in tabelo letal,
-- `/admin` administratorski pogled za validacijo, drift, metrike ucenja, monitoring in modelne artefakte,
-- `/api/flights` podatke za uporabniski pogled,
-- `/api/admin/summary` zdruzen pregled kakovosti podatkov in modelov.
+FastAPI ponuja:
 
-Lokalni zagon:
+- `/api/intelligence/briefing` operativni briefing, prioritetno vrsto in model readiness,
+- `/api/predictions/{icao24}` napoved naslednje pozicije in verjetnosti `on_ground`,
+- `/api/flights` zadnje obdelane OpenSky zapise z razlago operativnega signala,
+- `/api/admin/summary` zdruzen pregled validacije, drifta, metrik in modelnih artefaktov,
+- `/api/admin/advanced` razsirjen administratorski pogled nad quality gates, MLflow sledenjem, registrom modelov in report linki,
+- `/api/admin/model-registry/{model_key}/stage` lokalno upravljanje faz modela (`Candidate`, `Staging`, `Production`, `Archived`).
+
+React UI prikaze inteligentno izkusnjo: uporabnik izbere zrakoplov, vidi razloge za opozorilo, priporocen ukrep, heuristicno projekcijo ter napoved iz naucenih modelov.
+
+Razsirjena administratorska plosca zdruzuje:
+
+- rezultate Great Expectations validacije in Evidently drift testiranja,
+- ovrednotenje modelov v produkciji,
+- MLflow experiment tracking in podatke o registriranih modelih,
+- lokalni lifecycle nadzor modelov za prikaz migracije med fazami,
+- povezave do HTML/JSON porocil, kadar so artefakti prisotni po `dvc pull`.
+
+Lokalni backend:
 
 ```bash
 uv run uvicorn src.app.main:app --reload
 ```
 
+Lokalni frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Produkcijski build frontenda:
+
+```bash
+cd frontend
+npm run build
+```
+
+Ko `frontend/dist` obstaja, ga FastAPI servira na `/`.
+
 ## Docker in namestitev v produkcijo
 
-Projekt vsebuje [Dockerfile](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/Dockerfile:1), ki zapakira FastAPI aplikacijo, modele, porocila in obdelane podatke v produkcijsko sliko. GitHub Actions workflow [docker.yml](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/.github/workflows/docker.yml:1) naredi:
+Projekt vsebuje [Dockerfile](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/Dockerfile:1), ki najprej zgradi React frontend, nato zapakira FastAPI aplikacijo, modele, porocila in obdelane podatke v produkcijsko sliko. GitHub Actions workflow [docker.yml](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/.github/workflows/docker.yml:1) naredi:
 
 - `dvc pull` za produkcijske artefakte,
 - Docker build,
