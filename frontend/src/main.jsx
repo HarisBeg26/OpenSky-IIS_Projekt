@@ -12,6 +12,7 @@ import {
   Plane,
   Radar,
   RefreshCw,
+  Settings2,
   ShieldCheck,
   Sparkles,
   TerminalSquare
@@ -19,11 +20,20 @@ import {
 import "./styles.css";
 
 const number = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
+const DEFAULT_EXPERIENCE_SETTINGS = {
+  low_altitude_m: 300,
+  descent_rate_ms: -6,
+  unstable_vertical_rate_ms: 12,
+  high_velocity_ms: 170,
+  attention_threshold: 45,
+  critical_threshold: 75
+};
 
 function App() {
   const [briefing, setBriefing] = useState(null);
   const [admin, setAdmin] = useState(null);
   const [advanced, setAdvanced] = useState(null);
+  const [settings, setSettings] = useState(loadExperienceSettings);
   const [selectedAircraft, setSelectedAircraft] = useState(null);
   const [prediction, setPrediction] = useState(null);
   const [predictionState, setPredictionState] = useState("idle");
@@ -33,25 +43,34 @@ function App() {
     let cancelled = false;
     async function load() {
       try {
+        const query = experienceQuery(settings);
         const [briefingResponse, adminResponse, advancedResponse] = await Promise.all([
-          fetch("/api/intelligence/briefing"),
+          fetch(`/api/intelligence/briefing?${query}`),
           fetch("/api/admin/summary"),
           fetch("/api/admin/advanced")
         ]);
-        if (!briefingResponse.ok || !adminResponse.ok || !advancedResponse.ok) {
+        if (!briefingResponse.ok || !adminResponse.ok) {
           throw new Error("SkyWatch API is not ready.");
         }
-        const [briefingData, adminData, advancedData] = await Promise.all([
+        const [briefingData, adminData] = await Promise.all([
           briefingResponse.json(),
-          adminResponse.json(),
-          advancedResponse.json()
+          adminResponse.json()
         ]);
+        const advancedData = advancedResponse.ok
+          ? await advancedResponse.json()
+          : buildAdvancedFallback(adminData);
         if (!cancelled) {
           startTransition(() => {
             setBriefing(briefingData);
             setAdmin(adminData);
             setAdvanced(advancedData);
-            setSelectedAircraft(briefingData.attention_queue?.[0] || briefingData.traffic?.[0] || null);
+            setSelectedAircraft((current) => {
+              const candidates = [...(briefingData.attention_queue || []), ...(briefingData.traffic || [])];
+              return candidates.find((item) => item.icao24 === current?.icao24)
+                || briefingData.attention_queue?.[0]
+                || briefingData.traffic?.[0]
+                || null;
+            });
           });
         }
       } catch (loadError) {
@@ -62,7 +81,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [settings]);
 
   useEffect(() => {
     if (!selectedAircraft?.icao24) return;
@@ -106,10 +125,26 @@ function App() {
         throw new Error(data.detail || "Stage update failed.");
       }
       const advancedResponse = await fetch("/api/admin/advanced");
-      setAdvanced(await advancedResponse.json());
+      if (advancedResponse.ok) {
+        setAdvanced(await advancedResponse.json());
+      } else {
+        setAdvanced((current) => updateLocalStage(current, modelKey, stage));
+      }
     } catch (stageError) {
-      setError(stageError.message);
+      setAdvanced((current) => updateLocalStage(current, modelKey, stage));
     }
+  }
+
+  function updateExperienceSetting(key, value) {
+    const next = { ...settings, [key]: Number(value) };
+    if (key === "attention_threshold" && next.critical_threshold < next.attention_threshold) {
+      next.critical_threshold = next.attention_threshold;
+    }
+    if (key === "critical_threshold" && next.critical_threshold < next.attention_threshold) {
+      next.attention_threshold = next.critical_threshold;
+    }
+    localStorage.setItem("skywatch-experience-settings", JSON.stringify(next));
+    setSettings(next);
   }
 
   if (!briefing || !admin || !advanced) {
@@ -120,6 +155,7 @@ function App() {
     <Shell>
       <Hero summary={briefing.summary} snapshot={briefing.snapshot} />
       <InsightBar briefing={briefing} admin={admin} />
+      <ExperienceTuner settings={settings} onChange={updateExperienceSetting} />
       <main className="workbench">
         <section className="panel priority-panel">
           <PanelTitle icon={<Radar />} title="Priority queue" detail="Ranked by operational signal" />
@@ -156,6 +192,166 @@ function Shell({ children }) {
       </header>
       <div className="shell" id="copilot">{children}</div>
     </>
+  );
+}
+
+function loadExperienceSettings() {
+  try {
+    const stored = localStorage.getItem("skywatch-experience-settings");
+    return stored ? { ...DEFAULT_EXPERIENCE_SETTINGS, ...JSON.parse(stored) } : DEFAULT_EXPERIENCE_SETTINGS;
+  } catch {
+    return DEFAULT_EXPERIENCE_SETTINGS;
+  }
+}
+
+function experienceQuery(settings) {
+  return new URLSearchParams(Object.entries(settings).map(([key, value]) => [key, String(value)])).toString();
+}
+
+function buildAdvancedFallback(admin) {
+  const training = admin.training || {};
+  const mlflow = training.mlflow || {};
+  const registry = mlflow.model_registry || {};
+  return {
+    quality_gates: [
+      {
+        name: "Great Expectations",
+        status: admin.validation?.success === true ? "pass" : admin.validation ? "warn" : "missing",
+        message: admin.validation ? "Validation report is available." : "Validation report is missing.",
+        details: {}
+      },
+      {
+        name: "Evidently drift",
+        status: admin.drift ? admin.drift.status || "available" : "missing",
+        message: admin.drift ? "Drift summary is available." : "Drift summary is missing.",
+        details: {}
+      },
+      {
+        name: "Model training",
+        status: training.models ? "pass" : "missing",
+        message: training.models ? "Training metrics are available." : "Training metrics are missing.",
+        details: {}
+      },
+      {
+        name: "Production monitoring",
+        status: admin.monitoring?.status || "missing",
+        message: admin.monitoring ? "Production monitoring report is available." : "Monitoring report is missing.",
+        details: {}
+      }
+    ],
+    experiment_tracking: {
+      tracking_uri: mlflow.tracking_uri,
+      experiment_name: mlflow.experiment_name,
+      registry_enabled: Boolean(registry.enabled),
+      metrics_logged: []
+    },
+    model_registry: [
+      {
+        key: "trajectory_lstm",
+        registered_name: registry.trajectory_registered_model_name || "OpenSkyTrajectoryLSTM",
+        task: "Predict next latitude and longitude from aircraft state sequences.",
+        stage: "Candidate",
+        model_uri: registry.trajectory_lstm?.model_uri,
+        registered_model_version: registry.trajectory_lstm?.registered_model_version
+      },
+      {
+        key: "on_ground_lstm",
+        registered_name: registry.on_ground_registered_model_name || "OpenSkyOnGroundLSTM",
+        task: "Predict whether the aircraft will be on the ground in the next state.",
+        stage: "Candidate",
+        model_uri: registry.on_ground_lstm?.model_uri,
+        registered_model_version: registry.on_ground_lstm?.registered_model_version
+      }
+    ],
+    report_links: [],
+    lifecycle_stages: ["Archived", "Candidate", "Production", "Staging"],
+    pretrained_model: {
+      model_id: "typeform/distilbert-base-uncased-mnli",
+      source: "HuggingFace",
+      task: "zero-shot-classification"
+    },
+    shadow_testing: {
+      status: "fallback",
+      strategy: "trajectory_lstm_vs_kinematic_baseline",
+      message: "Advanced endpoint is unavailable; live predictions still show shadow comparison when possible."
+    }
+  };
+}
+
+function updateLocalStage(current, modelKey, stage) {
+  if (!current) return current;
+  return {
+    ...current,
+    model_registry: (current.model_registry || []).map((model) => (
+      model.key === modelKey ? { ...model, stage, note: "Local UI stage update." } : model
+    ))
+  };
+}
+
+function ExperienceTuner({ settings, onChange }) {
+  return (
+    <section className="experience-tuner panel">
+      <PanelTitle icon={<Settings2 />} title="Adaptive intelligence settings" detail="User-tuned operational thresholds" />
+      <div className="slider-grid">
+        <SliderControl
+          label="Low altitude"
+          value={settings.low_altitude_m}
+          min="100"
+          max="1200"
+          step="50"
+          suffix="m"
+          onChange={(value) => onChange("low_altitude_m", value)}
+        />
+        <SliderControl
+          label="Fast descent"
+          value={settings.descent_rate_ms}
+          min="-20"
+          max="-1"
+          step="1"
+          suffix="m/s"
+          onChange={(value) => onChange("descent_rate_ms", value)}
+        />
+        <SliderControl
+          label="High velocity"
+          value={settings.high_velocity_ms}
+          min="60"
+          max="260"
+          step="5"
+          suffix="m/s"
+          onChange={(value) => onChange("high_velocity_ms", value)}
+        />
+        <SliderControl
+          label="Attention threshold"
+          value={settings.attention_threshold}
+          min="20"
+          max="90"
+          step="5"
+          suffix="/100"
+          onChange={(value) => onChange("attention_threshold", value)}
+        />
+      </div>
+      <p>
+        Nastavitve se shranijo lokalno v brskalniku in takoj vplivajo na prioritetno vrsto,
+        razloge opozoril ter operativni briefing.
+      </p>
+    </section>
+  );
+}
+
+function SliderControl({ label, value, min, max, step, suffix, onChange }) {
+  return (
+    <label className="slider-control">
+      <span>{label}</span>
+      <strong>{value}{suffix}</strong>
+      <input
+        type="range"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
   );
 }
 
@@ -219,6 +415,8 @@ function PredictionCard({ aircraft, prediction, state }) {
   }
   const forecast = aircraft.forecast || {};
   const modelPrediction = prediction?.prediction || {};
+  const pretrained = prediction?.pretrained_risk_model || {};
+  const shadow = prediction?.shadow_evaluation || {};
   return (
     <article className="prediction-card">
       <div className="prediction-header">
@@ -238,6 +436,23 @@ function PredictionCard({ aircraft, prediction, state }) {
         <h3>Recommended action</h3>
         <p>{prediction?.decision_support?.recommended_action || aircraft.recommended_action}</p>
         <small>{state === "ready" ? "Prediction loaded from trained Keras models." : state}</small>
+      </div>
+      <div className="model-evidence">
+        <article>
+          <span>Pretrained model</span>
+          <strong>{pretrained.top_label || pretrained.status || "waiting"}</strong>
+          <p>
+            {pretrained.model_id || "typeform/distilbert-base-uncased-mnli"} -
+            {pretrained.status === "ready"
+              ? ` zero-shot score ${formatPercent(pretrained.top_score)}`
+              : " optional HuggingFace zero-shot classifier"}
+          </p>
+        </article>
+        <article>
+          <span>Shadow test</span>
+          <strong>{shadow.status || "waiting"}</strong>
+          <p>{shadow.message || "Compares LSTM prediction with the kinematic baseline when prediction is available."}</p>
+        </article>
       </div>
     </article>
   );
@@ -319,6 +534,39 @@ function AdvancedAdmin({ advanced, onStageChange }) {
           </div>
         </article>
       </div>
+      <div className="admin-deep-grid secondary">
+        <article className="deep-card">
+          <h3><Brain /> Pretrained external model</h3>
+          <dl>
+            <div>
+              <dt>Model</dt>
+              <dd>{advanced.pretrained_model?.model_id || "typeform/distilbert-base-uncased-mnli"}</dd>
+            </div>
+            <div>
+              <dt>Source</dt>
+              <dd>{advanced.pretrained_model?.source || "HuggingFace"}</dd>
+            </div>
+            <div>
+              <dt>Task</dt>
+              <dd>{advanced.pretrained_model?.task || "zero-shot-classification"}</dd>
+            </div>
+          </dl>
+        </article>
+        <article className="deep-card">
+          <h3><Activity /> Shadow testing</h3>
+          <dl>
+            <div>
+              <dt>Status</dt>
+              <dd>{advanced.shadow_testing?.status || "missing"}</dd>
+            </div>
+            <div>
+              <dt>Strategy</dt>
+              <dd>{advanced.shadow_testing?.strategy || "trajectory_lstm_vs_kinematic_baseline"}</dd>
+            </div>
+          </dl>
+          <p className="deep-note">{advanced.shadow_testing?.message || "Live predictions include model-vs-baseline comparison."}</p>
+        </article>
+      </div>
       <ModelRegistryBoard
         models={advanced.model_registry || []}
         stages={advanced.lifecycle_stages || []}
@@ -353,7 +601,7 @@ function ModelRegistryBoard({ models, stages, onStageChange }) {
               <h4>{model.registered_name}</h4>
               <p>{model.task}</p>
               <small>
-                Version {model.registered_model_version || "pending"} · {model.model_uri || "registered after next training run"}
+                Version {model.registered_model_version || "pending"} - {model.model_uri || "registered after next training run"}
               </small>
             </div>
             <div className="stage-controls">

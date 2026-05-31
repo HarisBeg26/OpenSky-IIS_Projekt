@@ -7,13 +7,14 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.app.prediction import PredictionError, predict_aircraft_state
+from src.app.pretrained_risk import build_flight_risk_text, classify_with_pretrained_model
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
@@ -22,6 +23,15 @@ GX_DOCS_DIR = PROJECT_ROOT / "gx" / "uncommitted" / "data_docs" / "local_site"
 EVIDENTLY_REPORTS_DIR = PROJECT_ROOT / "reports" / "evidently"
 MODEL_REGISTRY_STATE_PATH = PROJECT_ROOT / "reports" / "model_registry" / "model_registry_state.json"
 ALLOWED_MODEL_STAGES = {"Candidate", "Staging", "Production", "Archived"}
+
+
+class ExperienceSettings(BaseModel):
+    low_altitude_m: float = 300
+    descent_rate_ms: float = -6
+    unstable_vertical_rate_ms: float = 12
+    high_velocity_ms: float = 170
+    attention_threshold: int = 45
+    critical_threshold: int = 75
 
 
 class ModelStageUpdate(BaseModel):
@@ -86,19 +96,44 @@ def health() -> dict[str, Any]:
     }
 
 
+def _settings_from_query(
+    low_altitude_m: Annotated[float, Query(ge=50, le=3000)] = 300,
+    descent_rate_ms: Annotated[float, Query(ge=-50, le=-0.1)] = -6,
+    unstable_vertical_rate_ms: Annotated[float, Query(ge=1, le=60)] = 12,
+    high_velocity_ms: Annotated[float, Query(ge=20, le=400)] = 170,
+    attention_threshold: Annotated[int, Query(ge=1, le=100)] = 45,
+    critical_threshold: Annotated[int, Query(ge=1, le=100)] = 75,
+) -> ExperienceSettings:
+    return ExperienceSettings(
+        low_altitude_m=low_altitude_m,
+        descent_rate_ms=descent_rate_ms,
+        unstable_vertical_rate_ms=unstable_vertical_rate_ms,
+        high_velocity_ms=high_velocity_ms,
+        attention_threshold=attention_threshold,
+        critical_threshold=max(critical_threshold, attention_threshold),
+    )
+
+
 @app.get("/api/flights")
-def flights(limit: Annotated[int, Query(ge=1, le=1000)] = 150) -> dict[str, Any]:
-    snapshot, records = _flight_records(limit)
+def flights(
+    settings: Annotated[ExperienceSettings, Depends(_settings_from_query)],
+    limit: Annotated[int, Query(ge=1, le=1000)] = 150,
+) -> dict[str, Any]:
+    snapshot, records = _flight_records(limit, settings)
     return {
         "snapshot": snapshot.name if snapshot else None,
         "count": len(records),
+        "experience_settings": settings.model_dump(),
         "flights": records,
     }
 
 
 @app.get("/api/intelligence/briefing")
-def intelligence_briefing(limit: Annotated[int, Query(ge=10, le=1000)] = 120) -> dict[str, Any]:
-    snapshot, records = _flight_records(limit)
+def intelligence_briefing(
+    settings: Annotated[ExperienceSettings, Depends(_settings_from_query)],
+    limit: Annotated[int, Query(ge=10, le=1000)] = 120,
+) -> dict[str, Any]:
+    snapshot, records = _flight_records(limit, settings)
     attention = sorted(
         [record for record in records if record["status"] not in {"normal", "ground"}],
         key=lambda item: item["attention_score"],
@@ -119,6 +154,7 @@ def intelligence_briefing(limit: Annotated[int, Query(ge=10, le=1000)] = 120) ->
         },
         "model_readiness": _model_confidence(training),
         "monitoring": monitoring,
+        "experience_settings": settings.model_dump(),
         "attention_queue": attention[:10],
         "traffic": sorted(records, key=lambda item: item["attention_score"], reverse=True)[:80],
     }
@@ -135,8 +171,12 @@ def aircraft_prediction(icao24: str) -> dict[str, Any]:
 
     latest = prediction.get("latest_state", {})
     insight = _flight_insight(latest) if latest else {}
+    pretrained = classify_with_pretrained_model(build_flight_risk_text(latest, insight)) if latest else {}
+    shadow = _shadow_compare_prediction(latest, prediction.get("prediction", {})) if latest else {}
     return {
         **prediction,
+        "pretrained_risk_model": pretrained,
+        "shadow_evaluation": shadow,
         "decision_support": {
             "status": insight.get("status"),
             "attention_score": insight.get("attention_score"),
@@ -175,6 +215,13 @@ def advanced_admin_summary() -> dict[str, Any]:
         "model_registry": _model_registry_summary(training),
         "report_links": _admin_report_links(),
         "lifecycle_stages": sorted(ALLOWED_MODEL_STAGES),
+        "shadow_testing": _shadow_testing_summary(training),
+        "pretrained_model": {
+            "model_id": "typeform/distilbert-base-uncased-mnli",
+            "source": "HuggingFace",
+            "task": "zero-shot-classification",
+            "enabled_by_env": "HF_INFERENCE_ENABLED=true",
+        },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -208,7 +255,11 @@ def model_monitoring() -> dict[str, Any]:
     }
 
 
-def _flight_records(limit: int = 150) -> tuple[Path | None, list[dict[str, Any]]]:
+def _flight_records(
+    limit: int = 150,
+    settings: ExperienceSettings | None = None,
+) -> tuple[Path | None, list[dict[str, Any]]]:
+    settings = settings or ExperienceSettings()
     snapshot = _latest_processed_snapshot()
     if snapshot is None:
         return None, []
@@ -216,7 +267,7 @@ def _flight_records(limit: int = 150) -> tuple[Path | None, list[dict[str, Any]]
     df = _read_table(snapshot).tail(limit)
     records = []
     for row in df.to_dict(orient="records"):
-        insight = _flight_insight(row)
+        insight = _flight_insight(row, settings)
         records.append(
             {
                 "icao24": row.get("icao24"),
@@ -234,6 +285,7 @@ def _flight_records(limit: int = 150) -> tuple[Path | None, list[dict[str, Any]]
                 "reason": insight["reason"],
                 "recommended_action": insight["recommended_action"],
                 "forecast": insight["forecast"],
+                "matched_settings": insight["matched_settings"],
             }
         )
 
@@ -293,7 +345,11 @@ def _model_confidence(training: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _flight_insight(row: dict[str, Any]) -> dict[str, Any]:
+def _flight_insight(
+    row: dict[str, Any],
+    settings: ExperienceSettings | None = None,
+) -> dict[str, Any]:
+    settings = settings or ExperienceSettings()
     altitude = _number(row.get("baro_altitude")) or _number(row.get("geo_altitude")) or 0
     velocity = _number(row.get("velocity")) or 0
     vertical_rate = _number(row.get("vertical_rate")) or 0
@@ -307,30 +363,37 @@ def _flight_insight(row: dict[str, Any]) -> dict[str, Any]:
             "reason": "Zrakoplov je oznacen kot na tleh.",
             "recommended_action": "Ni potrebnega ukrepa; ohrani v zgodovini prometa.",
             "forecast": forecast,
+            "matched_settings": [],
         }
 
     score = 15
     reasons: list[str] = []
-    if altitude < 300 and velocity > 30:
+    matched_settings: list[str] = []
+    if altitude < settings.low_altitude_m and velocity > 30:
         score += 35
         reasons.append("nizka visina")
-    if vertical_rate < -6 and altitude < 1500:
+        matched_settings.append("low_altitude_m")
+    if vertical_rate < settings.descent_rate_ms and altitude < 1500:
         score += 30
         reasons.append("hitro spuscanje")
-    if abs(vertical_rate) > 12:
+        matched_settings.append("descent_rate_ms")
+    if abs(vertical_rate) > settings.unstable_vertical_rate_ms:
         score += 20
         reasons.append("nestabilna vertikalna hitrost")
-    if velocity > 170:
+        matched_settings.append("unstable_vertical_rate_ms")
+    if velocity > settings.high_velocity_ms:
         score += 15
         reasons.append("visoka hitrost")
+        matched_settings.append("high_velocity_ms")
     if forecast and forecast.get("altitude_m") is not None and forecast["altitude_m"] < 150:
         score += 20
         reasons.append("napovedana zelo nizka visina")
+        matched_settings.append("forecast_low_altitude")
 
     status = "normal"
-    if score >= 75:
+    if score >= settings.critical_threshold:
         status = "critical"
-    elif score >= 45:
+    elif score >= settings.attention_threshold:
         status = "watch"
 
     reason = ", ".join(reasons) if reasons else "parametri leta so znotraj pricakovanega obmocja"
@@ -340,6 +403,7 @@ def _flight_insight(row: dict[str, Any]) -> dict[str, Any]:
         "reason": reason,
         "recommended_action": _recommended_action(status, altitude, vertical_rate),
         "forecast": forecast,
+        "matched_settings": matched_settings,
     }
 
 
@@ -375,6 +439,41 @@ def _forecast_next_state(row: dict[str, Any], seconds: int = 90) -> dict[str, fl
         "longitude": longitude + lon_delta,
         "altitude_m": (altitude + vertical_rate * seconds) if altitude is not None else None,
         }
+
+
+def _shadow_compare_prediction(latest: dict[str, Any], model_prediction: dict[str, Any]) -> dict[str, Any]:
+    heuristic = _forecast_next_state(latest)
+    model_lat = _number(model_prediction.get("next_latitude"))
+    model_lon = _number(model_prediction.get("next_longitude"))
+    if not heuristic or model_lat is None or model_lon is None:
+        return {
+            "status": "unavailable",
+            "message": "Shadow comparison needs both heuristic forecast and model prediction.",
+        }
+
+    heuristic_lat = heuristic.get("latitude")
+    heuristic_lon = heuristic.get("longitude")
+    distance_m = _haversine_m(heuristic_lat, heuristic_lon, model_lat, model_lon)
+    status = "aligned" if distance_m < 5_000 else "review"
+    return {
+        "status": status,
+        "baseline": "kinematic_90s_forecast",
+        "candidate": "trajectory_lstm",
+        "distance_m": distance_m,
+        "message": f"LSTM prediction is {distance_m:.0f}m from the heuristic shadow baseline.",
+    }
+
+
+def _haversine_m(lat1: float | None, lon1: float | None, lat2: float | None, lon2: float | None) -> float:
+    if None in {lat1, lon1, lat2, lon2}:
+        return float("nan")
+    radius_m = 6_371_000
+    phi1 = math.radians(float(lat1))
+    phi2 = math.radians(float(lat2))
+    delta_phi = math.radians(float(lat2) - float(lat1))
+    delta_lambda = math.radians(float(lon2) - float(lon1))
+    a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    return float(radius_m * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 
 def _validation_gate(validation: dict[str, Any] | None) -> dict[str, Any]:
@@ -414,6 +513,30 @@ def _training_gate(training: dict[str, Any] | None) -> dict[str, Any]:
         f"Readiness is {readiness['label']} with trajectory MAE {readiness['trajectory_mae']:.2f}.",
         readiness,
     )
+
+
+def _shadow_testing_summary(training: dict[str, Any] | None) -> dict[str, Any]:
+    if not training:
+        return {
+            "status": "missing",
+            "strategy": "trajectory_lstm_vs_kinematic_baseline",
+            "message": "Training metrics are missing; live shadow comparisons still run per prediction when possible.",
+        }
+
+    models = training.get("models", {}) if isinstance(training, dict) else {}
+    trajectory = models.get("trajectory_lstm", {})
+    mae_longitude = float(trajectory.get("mae_longitude", 0) or 0)
+    mae_latitude = float(trajectory.get("mae_latitude", 0) or 0)
+    status = "watch" if max(mae_longitude, mae_latitude) > 5 else "ready"
+    return {
+        "status": status,
+        "strategy": "trajectory_lstm_vs_kinematic_baseline",
+        "baseline": "90-second kinematic projection from current speed and track",
+        "candidate": "trained trajectory_lstm neural network",
+        "message": "Each live prediction returns distance between the trained model and the heuristic shadow baseline.",
+        "training_mae_latitude": mae_latitude,
+        "training_mae_longitude": mae_longitude,
+    }
 
 
 def _monitoring_gate(monitoring: dict[str, Any] | None) -> dict[str, Any]:

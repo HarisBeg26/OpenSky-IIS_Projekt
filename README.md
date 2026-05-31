@@ -342,14 +342,16 @@ Uporabniski vmesnik je locena React aplikacija v `frontend/`, FastAPI pa ostane 
 
 FastAPI ponuja:
 
-- `/api/intelligence/briefing` operativni briefing, prioritetno vrsto in model readiness,
-- `/api/predictions/{icao24}` napoved naslednje pozicije in verjetnosti `on_ground`,
+- `/api/intelligence/briefing` operativni briefing, prioritetno vrsto in model readiness z uporabnisko nastavljivimi pragi,
+- `/api/predictions/{icao24}` napoved naslednje pozicije in verjetnosti `on_ground`, shadow primerjavo in opcijsko HuggingFace zero-shot oceno tveganja,
 - `/api/flights` zadnje obdelane OpenSky zapise z razlago operativnega signala,
 - `/api/admin/summary` zdruzen pregled validacije, drifta, metrik in modelnih artefaktov,
 - `/api/admin/advanced` razsirjen administratorski pogled nad quality gates, MLflow sledenjem, registrom modelov in report linki,
 - `/api/admin/model-registry/{model_key}/stage` lokalno upravljanje faz modela (`Candidate`, `Staging`, `Production`, `Archived`).
 
-React UI prikaze inteligentno izkusnjo: uporabnik izbere zrakoplov, vidi razloge za opozorilo, priporocen ukrep, heuristicno projekcijo ter napoved iz naucenih modelov.
+React UI prikaze inteligentno izkusnjo: uporabnik izbere zrakoplov, vidi razloge za opozorilo, priporocen ukrep, heuristicno projekcijo ter napoved iz naucenih modelov. Uporabnik lahko prilagodi prag nizke visine, hitrosti spuscanja, visoke hitrosti in minimalnega attention score; nastavitve se shranijo lokalno v brskalniku in takoj vplivajo na prioritetno vrsto.
+
+Poleg dveh lastno naucenih nevronskih mrez projekt vkljucuje tudi opcijsko integracijo z obstojecim naucenim modelom `typeform/distilbert-base-uncased-mnli` iz HuggingFace za zero-shot klasifikacijo tekstovnega opisa tveganja leta. Integracija se vklopi z okoljsko spremenljivko `HF_INFERENCE_ENABLED=true`, za avtentikacijo pa lahko uporabis `HF_API_TOKEN`.
 
 Razsirjena administratorska plosca zdruzuje:
 
@@ -357,6 +359,7 @@ Razsirjena administratorska plosca zdruzuje:
 - ovrednotenje modelov v produkciji,
 - MLflow experiment tracking in podatke o registriranih modelih,
 - lokalni lifecycle nadzor modelov za prikaz migracije med fazami,
+- shadow testing primerjavo med LSTM trajektorijo in kinematicnim baseline modelom,
 - povezave do HTML/JSON porocil, kadar so artefakti prisotni po `dvc pull`.
 
 Lokalni backend:
@@ -408,8 +411,10 @@ Po tem:
 
 - `dvc push` shrani DVC artefakte,
 - `git add dvc.lock uv.lock` pripravi zaklepne datoteke,
-- metricni JSON-i za validacijo, trening in monitoring se dodajo v Git, da so porocila dostopna tudi po svezem klonu,
+- metricni JSON-i za validacijo, trening in monitoring ostanejo DVC outputs/metrics in se ne dodajajo neposredno v Git,
 - Great Expectations Data Docs se po uspesni validaciji lahko objavijo na Netlify.
+
+Zajem OpenSky podatkov uporablja vec ponovnih poskusov in svezi DVC fallback. Fallback na obstojec raw snapshot je dovoljen samo, ce je snapshot mlajsi od `fetch.max_cached_age_hours`; s tem pipeline ne nadaljuje tiho na prestarih podatkih.
 
 Aktualni workflow je v [fetch_data.yml](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/.github/workflows/fetch_data.yml:1).
 

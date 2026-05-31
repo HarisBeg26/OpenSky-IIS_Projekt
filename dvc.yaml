@@ -12,6 +12,7 @@ stages:
       - fetch.retries
       - fetch.retry_backoff_seconds
       - fetch.allow_cached_on_failure
+      - fetch.max_cached_age_hours
       - fetch.bbox
     outs:
       - data/raw:

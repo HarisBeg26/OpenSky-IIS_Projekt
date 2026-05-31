@@ -1,10 +1,11 @@
 fetch:
   url: "https://opensky-network.org/api/states/all"
   output_dir: "data/raw"
-  timeout_seconds: 30
-  retries: 2
-  retry_backoff_seconds: 10
+  timeout_seconds: 60
+  retries: 5
+  retry_backoff_seconds: 20
   allow_cached_on_failure: true
+  max_cached_age_hours: 12
   bbox:
     lamin: 42.5
     lomin: 15.5

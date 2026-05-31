@@ -11,10 +11,11 @@ import yaml
 
 OPEN_SKY_URL = "https://opensky-network.org/api/states/all"
 DEFAULT_RAW_DIR = "data/raw"
-DEFAULT_TIMEOUT_SECONDS = 30
-DEFAULT_RETRIES = 2
-DEFAULT_RETRY_BACKOFF_SECONDS = 10
+DEFAULT_TIMEOUT_SECONDS = 60
+DEFAULT_RETRIES = 5
+DEFAULT_RETRY_BACKOFF_SECONDS = 20
 DEFAULT_ALLOW_CACHED_ON_FAILURE = True
+DEFAULT_MAX_CACHED_AGE_HOURS = 12
 
 
 def _load_fetch_params(params_path: str = "params.yaml") -> dict:
@@ -25,6 +26,7 @@ def _load_fetch_params(params_path: str = "params.yaml") -> dict:
         "retries": DEFAULT_RETRIES,
         "retry_backoff_seconds": DEFAULT_RETRY_BACKOFF_SECONDS,
         "allow_cached_on_failure": DEFAULT_ALLOW_CACHED_ON_FAILURE,
+        "max_cached_age_hours": DEFAULT_MAX_CACHED_AGE_HOURS,
         "bbox": None,
     }
     params_file = Path(params_path)
@@ -44,6 +46,9 @@ def _load_fetch_params(params_path: str = "params.yaml") -> dict:
         ),
         "allow_cached_on_failure": fetch_params.get(
             "allow_cached_on_failure", defaults["allow_cached_on_failure"]
+        ),
+        "max_cached_age_hours": fetch_params.get(
+            "max_cached_age_hours", defaults["max_cached_age_hours"]
         ),
         "bbox": bbox if isinstance(bbox, dict) else defaults["bbox"],
     }
@@ -78,6 +83,11 @@ def _latest_cached_snapshot(output_dir: str | Path) -> Path | None:
     return snapshots[-1] if snapshots else None
 
 
+def _cached_snapshot_age_hours(snapshot_path: Path) -> float:
+    modified_at = datetime.fromtimestamp(snapshot_path.stat().st_mtime, tz=timezone.utc)
+    return (datetime.now(timezone.utc) - modified_at).total_seconds() / 3600
+
+
 def _request_opensky_payload(
     url: str,
     auth: tuple[str, str] | None,
@@ -107,6 +117,7 @@ def fetch_opensky_data(output_dir: str = DEFAULT_RAW_DIR) -> int:
         retries = max(1, int(params["retries"]))
         retry_backoff_seconds = max(0, int(params["retry_backoff_seconds"]))
         allow_cached_on_failure = _as_bool(params["allow_cached_on_failure"])
+        max_cached_age_hours = float(params["max_cached_age_hours"])
         query_params = _build_bbox_query(params["bbox"])
 
         configured_output_dir = params["output_dir"]
@@ -125,7 +136,18 @@ def fetch_opensky_data(output_dir: str = DEFAULT_RAW_DIR) -> int:
         else:
             cached_snapshot = _latest_cached_snapshot(effective_output_dir)
             if allow_cached_on_failure and cached_snapshot:
+                cached_age_hours = _cached_snapshot_age_hours(cached_snapshot)
+                if cached_age_hours > max_cached_age_hours:
+                    print(
+                        "Cached raw snapshot is too old for fallback: "
+                        f"{cached_snapshot} is {cached_age_hours:.2f}h old "
+                        f"(max {max_cached_age_hours:.2f}h)."
+                    )
+                    print(f"Fetch failed: {last_error}")
+                    return 1
+
                 print(f"OpenSky fetch unavailable, using cached raw snapshot: {cached_snapshot}")
+                print(f"Cached snapshot age: {cached_age_hours:.2f}h (max {max_cached_age_hours:.2f}h).")
                 print("DVC pipeline will continue with existing raw data.")
                 return 0
 
