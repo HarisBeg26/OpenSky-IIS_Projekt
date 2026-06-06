@@ -304,14 +304,14 @@ def _build_deployment_report(params: dict[str, Any], monitoring_report: dict[str
     return {
         "status": "available",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "active_pattern": "hybrid_online_and_batch_inference",
+        "active_pattern": "hybrid_embedded_online_and_batch_inference",
         "patterns": [
             {
-                "key": "online_model_as_a_service",
-                "name": "Online model as a service",
-                "status": "ready" if onnx_ready else "missing",
-                "description": "A private ONNX Runtime service performs online inference and is reachable only from the public FastAPI service.",
-                "evidence": ["src/model_service/main.py", "docker/model-service.Dockerfile", "render.yaml"],
+                "key": "online_model_as_dependency",
+                "name": "Embedded ONNX online inference",
+                "status": "active" if onnx_ready else "missing",
+                "description": "The free Render web service loads ONNX artifacts locally and serves online predictions without a second paid service.",
+                "evidence": ["src/app/prediction.py", "src/inference/onnx.py", "render.yaml"],
             },
             {
                 "key": "batch_offline_prediction",
@@ -321,11 +321,11 @@ def _build_deployment_report(params: dict[str, Any], monitoring_report: dict[str
                 "evidence": ["src/inference/batch.py", "data/predictions/latest_predictions.json"],
             },
             {
-                "key": "online_model_as_dependency",
-                "name": "Embedded ONNX fallback",
-                "status": "ready" if onnx_ready else "missing",
-                "description": "FastAPI can execute the same ONNX artifacts locally when the private model service is unavailable.",
-                "evidence": ["src/app/prediction.py", "src/inference/onnx.py"],
+                "key": "online_model_as_a_service",
+                "name": "Model as a Service reference deployment",
+                "status": "local-ready" if onnx_ready else "missing",
+                "description": "A separate ONNX model service remains available for local Docker Compose demonstrations and future paid deployment.",
+                "evidence": ["src/model_service/main.py", "docker/model-service.Dockerfile", "docker-compose.yml"],
             },
             {
                 "key": "registry_governed_promotion",
@@ -345,10 +345,11 @@ def _build_deployment_report(params: dict[str, Any], monitoring_report: dict[str
         "serving_contract": {
             "prediction_endpoint": "/api/predictions/{icao24}",
             "batch_prediction_endpoint": "/api/batch-predictions/{icao24}",
-            "private_model_endpoint": "/v1/predict",
+            "optional_model_service_endpoint": "/v1/predict",
             "admin_endpoint": "/api/admin/advanced",
             "health_endpoint": "/api/health",
             "models_dir": params["models_dir"],
+            "production_target": "render_free_web_service",
         },
         "testing_strategy": {
             "key": "shadow_testing",

@@ -289,13 +289,13 @@ function buildAdvancedFallback(admin) {
     },
     deployment_patterns: admin.deployment || {
       status: "fallback",
-      active_pattern: "hybrid_online_and_batch_inference",
+      active_pattern: "hybrid_embedded_online_and_batch_inference",
       patterns: [
         {
-          key: "online_model_as_a_service",
-          name: "Online model as a service",
-          status: "ready",
-          description: "A private ONNX service performs online inference."
+          key: "online_model_as_dependency",
+          name: "Embedded ONNX online inference",
+          status: "active",
+          description: "The free Render web service executes ONNX models locally."
         },
         {
           key: "batch_offline_prediction",
@@ -304,10 +304,10 @@ function buildAdvancedFallback(admin) {
           description: "DVC prepares resilient predictions from the latest snapshot."
         },
         {
-          key: "online_model_as_dependency",
-          name: "Embedded ONNX fallback",
-          status: "ready",
-          description: "FastAPI can execute local ONNX artifacts if the model service is unavailable."
+          key: "online_model_as_a_service",
+          name: "Model as a Service reference deployment",
+          status: "local-ready",
+          description: "The separate ONNX service remains available through local Docker Compose."
         }
       ]
     },
@@ -632,7 +632,7 @@ function DeploymentPatternsCard({ deployment }) {
     <article className="deep-card feature-card">
       <h3><Layers /> Deployment patterns</h3>
       <p className="deep-note">
-        Active pattern: <strong>{deployment?.active_pattern || "hybrid_online_and_batch_inference"}</strong>
+        Active pattern: <strong>{deployment?.active_pattern || "hybrid_embedded_online_and_batch_inference"}</strong>
       </p>
       <div className="pattern-list">
         {patterns.map((pattern) => (

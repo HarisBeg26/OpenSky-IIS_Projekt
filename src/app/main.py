@@ -667,13 +667,13 @@ def _deployment_patterns_summary(deployment: dict[str, Any] | None) -> dict[str,
     if not deployment:
         return {
             "status": "fallback",
-            "active_pattern": "hybrid_online_and_batch_inference",
+            "active_pattern": "hybrid_embedded_online_and_batch_inference",
             "patterns": [
                 {
-                    "key": "online_model_as_a_service",
-                    "name": "Online model as a service",
-                    "status": "ready",
-                    "description": "A private ONNX service performs online inference for the public API.",
+                    "key": "online_model_as_dependency",
+                    "name": "Embedded ONNX online inference",
+                    "status": "active" if _models_available() else "missing",
+                    "description": "The free Render web service executes ONNX models locally.",
                 },
                 {
                     "key": "batch_offline_prediction",
@@ -682,10 +682,10 @@ def _deployment_patterns_summary(deployment: dict[str, Any] | None) -> dict[str,
                     "description": "DVC prepares predictions that remain available if online inference is unavailable.",
                 },
                 {
-                    "key": "online_model_as_dependency",
-                    "name": "Embedded ONNX fallback",
-                    "status": "ready" if _models_available() else "missing",
-                    "description": "FastAPI can execute local ONNX artifacts as a fallback.",
+                    "key": "online_model_as_a_service",
+                    "name": "Model as a Service reference deployment",
+                    "status": "local-ready" if _models_available() else "missing",
+                    "description": "The separate ONNX service remains available through local Docker Compose.",
                 },
             ],
         }

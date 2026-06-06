@@ -585,6 +585,7 @@ h1 {
 }
 
 .mini-status.local-governance,
+.mini-status.local-ready,
 .mini-status.pending,
 .mini-status.fallback,
 .mini-status.warn {

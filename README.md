@@ -396,14 +396,14 @@ Ko `frontend/dist` obstaja, ga FastAPI servira na `/`.
 
 ## Docker in namestitev v produkcijo
 
-Produkcijska namestitev uporablja hibridni arhitekturni vzorec:
+Produkcijska namestitev uporablja brezplacni hibridni arhitekturni vzorec:
 
-- javni `skywatch-api` servis zdruzuje React in FastAPI,
-- zasebni `skywatch-model-service` izvaja spletne napovedi z ONNX Runtime,
-- DVC faza `batch_predict` pripravi paketne napovedi za odpornost ob nedosegljivem modelnem servisu,
-- javni API lahko lokalni ONNX izvede tudi kot rezervni vzorec model-as-dependency.
+- en Render Free `skywatch-api` servis zdruzuje React, FastAPI in ONNX Runtime,
+- online napovedi se izvajajo kot model-as-dependency znotraj javnega API servisa,
+- DVC faza `batch_predict` pripravi paketne napovedi kot dodatno odporno pot,
+- loceni `skywatch-model-service` ostaja implementiran za lokalni Docker Compose prikaz vzorca Model as a Service.
 
-S tem projekt demonstrira online Model as a Service, batch/offline napovedovanje in hibridno kombinacijo obeh pristopov. Shadow testing ostaja pristop testiranja modela in ni vec napacno prikazan kot arhitekturni vzorec namestitve.
+S tem produkcija brez stroskov demonstrira online model-as-dependency, batch/offline napovedovanje in hibridno kombinacijo obeh pristopov. Loceni Model as a Service je dodatno dokazljiv lokalno. Shadow testing ostaja pristop testiranja modela in ni napacno prikazan kot arhitekturni vzorec namestitve.
 
 Lokalni Docker zagon:
 
@@ -418,22 +418,21 @@ Po zagonu sta na voljo:
 
 ### Render
 
-Datoteka `render.yaml` definira javni in zasebni servis v regiji Frankfurt. Zasebni servisi na Renderju nimajo brezplacnega paketa, zato Blueprint uporablja paket `starter`.
+Datoteka `render.yaml` definira en brezplacni spletni servis `skywatch-api` v regiji Frankfurt. Servis se lahko ob neaktivnosti ustavi, zato je prvi odziv po daljsem premoru lahko pocasnejsi.
 
 1. V GitHub nastavitvah ustvari Personal Access Token z dovoljenjem `read:packages`.
 2. V Render `Workspace Settings > Container Registry Credentials` dodaj GHCR poverilnico z imenom `github-container-registry`.
 3. V Render izberi `New > Blueprint`, povezi repozitorij in uporabi korensko datoteko `render.yaml`.
-4. Po prvi izdelavi slik v obeh Render servisih kopiraj Deploy Hook URL.
-5. V GitHub Actions secrets dodaj `RENDER_MODEL_DEPLOY_HOOK_URL` in `RENDER_API_DEPLOY_HOOK_URL`.
+4. V servisu `skywatch-api` kopiraj Deploy Hook URL.
+5. V GitHub Actions secrets dodaj samo `RENDER_API_DEPLOY_HOOK_URL`.
 
 GitHub Actions workflow `.github/workflows/docker.yml` po uspesnem podatkovnem cevovodu:
 
 - prenese DVC artefakte,
-- zgradi in objavi `api-latest` ter `model-latest` sliki v GHCR,
-- najprej sprozi namestitev zasebnega modelnega servisa,
-- nato sprozi namestitev javnega API servisa.
+- zgradi in objavi `api-latest` sliko v GHCR,
+- sprozi namestitev brezplacnega javnega API servisa.
 
-Render sam ustvari skupni `MODEL_SERVICE_TOKEN` in zasebni naslov modelnega servisa posreduje javnemu servisu. V produkciji je lokalni modelni fallback izklopljen; ce je modelni servis zacasno nedosegljiv, API uporabi zadnjo paketno napoved.
+Render ne potrebuje `MODEL_SERVICE_TOKEN`, ker ONNX modela izvaja znotraj istega vsebnika. Loceni modelni servis in token se uporabljata samo pri lokalnem `docker compose up --build` preizkusu.
 
 ## GitHub Actions in DVC
 
