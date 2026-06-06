@@ -337,8 +337,8 @@ stages:
       size: 4994
     - path: src/monitoring/monitor_models.py
       hash: md5
-      md5: df46cd2d0703818af2a24266a58e4495
-      size: 17233
+      md5: 36481424a05ae897b0361f5abe92abce
+      size: 17385
     params:
       params.yaml:
         monitoring.batch_predictions: data/predictions/latest_predictions.json
@@ -358,12 +358,12 @@ stages:
     outs:
     - path: reports/deployment/model_deployment_patterns.json
       hash: md5
-      md5: b59597211579aad79e6661f1e318dcdc
-      size: 2566
+      md5: 07daf1d9e8cf86c6c87e589803a8d065
+      size: 2718
     - path: reports/model_monitoring/production_model_monitoring.json
       hash: md5
-      md5: b2d7535af0501279ab14edb6bf5b1964
-      size: 24165
+      md5: 16e8251f1b2a3dfd9d6e7f7fece6688b
+      size: 24162
   batch_predict:
     cmd: uv run python main.py predict-batch
     deps:
