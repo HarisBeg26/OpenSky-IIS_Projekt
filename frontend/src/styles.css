@@ -495,6 +495,14 @@ h1 {
   padding-top: 0;
 }
 
+.admin-feature-grid {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 18px;
+}
+
 .deep-card,
 .registry-board {
   background: #fffaf0;
@@ -527,6 +535,168 @@ h1 {
 .deep-card dd {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
+}
+
+.feature-card {
+  display: grid;
+  gap: 16px;
+}
+
+.pattern-list,
+.compression-list,
+.feature-bars {
+  display: grid;
+  gap: 12px;
+}
+
+.pattern-item,
+.compression-list div {
+  background: rgba(24, 35, 31, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+}
+
+.pattern-item p,
+.compression-hero p,
+.compression-list small {
+  color: var(--muted);
+  margin: 0;
+}
+
+.mini-status {
+  background: var(--muted);
+  border-radius: 999px;
+  color: #fffaf0;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 5px 9px;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.mini-status.active,
+.mini-status.ready,
+.mini-status.available {
+  background: var(--green);
+}
+
+.mini-status.local-governance,
+.mini-status.pending,
+.mini-status.fallback,
+.mini-status.warn {
+  background: var(--amber);
+}
+
+.mini-status.missing,
+.mini-status.fail {
+  background: var(--red);
+}
+
+.compression-hero {
+  background:
+    radial-gradient(circle at 80% 20%, rgba(14, 124, 123, 0.2), transparent 32%),
+    rgba(14, 124, 123, 0.08);
+  border: 1px solid rgba(14, 124, 123, 0.18);
+  border-radius: 18px;
+  padding: 18px;
+}
+
+.compression-hero span,
+.compression-list span,
+.feature-bars > span {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.compression-hero strong {
+  display: block;
+  font-size: clamp(34px, 5vw, 58px);
+  letter-spacing: -0.06em;
+  line-height: 1;
+  margin: 8px 0;
+}
+
+.compression-list strong {
+  font-size: 22px;
+}
+
+.feature-bar {
+  display: grid;
+  gap: 8px;
+}
+
+.feature-bar div {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.feature-bar small {
+  color: var(--muted);
+}
+
+.feature-bar i {
+  background: linear-gradient(90deg, var(--teal), rgba(14, 124, 123, 0.22));
+  border-radius: 999px;
+  display: block;
+  height: 9px;
+}
+
+.shadow-card {
+  display: grid;
+  gap: 16px;
+}
+
+.shadow-status {
+  background: rgba(14, 124, 123, 0.08);
+  border: 1px solid rgba(14, 124, 123, 0.18);
+  border-radius: 18px;
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+}
+
+.shadow-status.review,
+.shadow-status.watch,
+.shadow-status.loading {
+  background: rgba(229, 152, 71, 0.12);
+  border-color: rgba(229, 152, 71, 0.26);
+}
+
+.shadow-status.unavailable,
+.shadow-status.missing {
+  background: rgba(196, 75, 63, 0.1);
+  border-color: rgba(196, 75, 63, 0.22);
+}
+
+.shadow-status span {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.shadow-status strong {
+  font-size: clamp(30px, 4vw, 48px);
+  letter-spacing: -0.05em;
+}
+
+.shadow-status p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.shadow-comparison {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .metric-cloud,
@@ -660,8 +830,10 @@ h1 {
   .quality-grid,
   .slider-grid,
   .admin-deep-grid,
+  .admin-feature-grid,
   .registry-item,
-  .model-evidence {
+  .model-evidence,
+  .shadow-comparison {
     grid-template-columns: 1fr;
   }
 

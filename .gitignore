@@ -1,6 +1,7 @@
 .env
 .venv/
 .uv-cache/
+mlruns/
 frontend/node_modules/
 frontend/dist/
 __pycache__/
@@ -10,6 +11,9 @@ reports/evidently/
 reports/model_training/
 reports/model_monitoring/
 reports/model_registry/
+reports/model_compression/
+reports/model_explainability/
+reports/deployment/
 gx/great_expectations.yml
 gx/checkpoints/
 gx/expectations/

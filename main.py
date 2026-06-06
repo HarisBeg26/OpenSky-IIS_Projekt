@@ -33,6 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
     train = subparsers.add_parser("train", help="Train OpenSky neural-network prediction models")
     train.add_argument("--params-path", default="params.yaml", help="Training parameter file")
 
+    predict_batch = subparsers.add_parser(
+        "predict-batch",
+        help="Generate offline predictions for aircraft in the latest processed snapshot",
+    )
+    predict_batch.add_argument("--params-path", default="params.yaml", help="Batch prediction parameter file")
+
     monitor = subparsers.add_parser("monitor", help="Generate production model monitoring report")
     monitor.add_argument("--params-path", default="params.yaml", help="Monitoring parameter file")
 
@@ -76,6 +82,10 @@ def main() -> None:
         from src.model.train import train_opensky_models
 
         raise SystemExit(train_opensky_models(params_path=args.params_path))
+    if args.command == "predict-batch":
+        from src.inference.batch import generate_batch_predictions
+
+        raise SystemExit(generate_batch_predictions(params_path=args.params_path))
     if args.command == "monitor":
         from src.monitoring.monitor_models import monitor_models
 

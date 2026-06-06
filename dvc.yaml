@@ -72,6 +72,7 @@ stages:
       - test_data.report_json
       - test_data.min_rows
       - test_data.drift_share
+      - test_data.max_reference_current_row_ratio
       - test_data.drop_columns
     outs:
       - data/reference:
@@ -83,8 +84,16 @@ stages:
     cmd: uv run python main.py train
     deps:
       - main.py
+      - src/model/compression.py
+      - src/model/explainability.py
+      - src/model/mlflow_tracking.py
       - src/model/preprocess.py
       - src/model/train.py
+      - src/model/training_artifacts.py
+      - src/model/training_config.py
+      - src/model/training_metrics.py
+      - src/model/training_models.py
+      - src/model/training_report.py
       - data/processed
       - gx/uncommitted
       - reports/validation/opensky_validation.json
@@ -95,15 +104,29 @@ stages:
       - train.history_file
       - train.models_dir
       - train.metrics_path
+      - train.compression_report_path
+      - train.explainability_report_path
       - train.mlflow_tracking_uri
       - train.mlflow_experiment_name
+      - train.mlflow_mode
       - train.register_models
+      - train.local_mlflow_fallback
+      - train.require_remote_mlflow
       - train.trajectory_registered_model_name
       - train.on_ground_registered_model_name
       - train.await_model_registration_seconds
+      - train.compression_enabled
+      - train.compression_method
+      - train.quantization_dtype
+      - train.explainability_enabled
+      - train.explainability_sample_size
+      - train.explainability_repeats
+      - train.explainability_top_n
       - train.test_size
       - train.max_sequences
       - train.window_size
+      - train.max_sequence_gap_seconds
+      - train.trajectory_target_mode
       - train.random_state
       - train.lstm_units
       - train.dense_units
@@ -119,6 +142,26 @@ stages:
           persist: true
     metrics:
       - reports/model_training/opensky_metrics.json
+      - reports/model_compression/opensky_compression.json
+      - reports/model_explainability/opensky_explainability.json
+
+  batch_predict:
+    cmd: uv run python main.py predict-batch
+    deps:
+      - main.py
+      - src/inference/batch.py
+      - src/inference/data.py
+      - src/inference/onnx.py
+      - data/processed
+      - models/opensky
+      - params.yaml
+    params:
+      - batch_prediction.processed_dir
+      - batch_prediction.output_file
+      - batch_prediction.max_aircraft
+    outs:
+      - data/predictions:
+          persist: true
 
   monitor:
     cmd: uv run python main.py monitor
@@ -128,14 +171,25 @@ stages:
       - data/processed
       - models/opensky
       - reports/model_training/opensky_metrics.json
+      - reports/model_compression/opensky_compression.json
+      - reports/model_explainability/opensky_explainability.json
+      - data/predictions
       - params.yaml
     params:
       - monitoring.report_path
       - monitoring.processed_dir
       - monitoring.models_dir
       - monitoring.training_metrics
+      - monitoring.compression_report
+      - monitoring.explainability_report
+      - monitoring.deployment_report_path
+      - monitoring.batch_predictions
       - monitoring.max_trajectory_mae
+      - monitoring.max_trajectory_mean_distance_km
+      - monitoring.min_trajectory_skill_score
       - monitoring.min_on_ground_accuracy
+      - monitoring.min_on_ground_f1
       - monitoring.max_data_age_hours
     metrics:
       - reports/model_monitoring/production_model_monitoring.json
+      - reports/deployment/model_deployment_patterns.json

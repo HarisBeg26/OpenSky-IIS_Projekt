@@ -310,6 +310,7 @@ Trening uporablja MLflow za sledenje eksperimentom na DagsHub:
 
 - tracking URI je nastavljen v `train.mlflow_tracking_uri`,
 - eksperiment je nastavljen v `train.mlflow_experiment_name`,
+- `train.mlflow_mode: auto` lokalno uporabi mapo `mlruns`, v GitHub Actions pa DagsHub,
 - vsak zagon shrani parametre, metrike in artefakte modelov,
 - oba Keras modela se dodatno serializirata v ONNX format z `train.onnx_opset`,
 - modeli so hkrati verzionirani z DVC kot izhod `models/opensky`.
@@ -320,6 +321,14 @@ Za GitHub Actions morata biti nastavljeni skrivnosti:
 - `MLFLOW_TRACKING_PASSWORD`
 
 Pri DagsHub je `MLFLOW_TRACKING_USERNAME` obicajno uporabnisko ime, `MLFLOW_TRACKING_PASSWORD` pa DagsHub token.
+
+Za lokalno ucenje poverilnice niso potrebne. Eksperimente lahko po treningu pregledas z:
+
+```bash
+uv run mlflow ui --backend-store-uri mlruns
+```
+
+Nato odpri `http://127.0.0.1:5000`.
 
 ## Produkcijsko nadzorovanje modelov
 
@@ -351,7 +360,7 @@ FastAPI ponuja:
 
 React UI prikaze inteligentno izkusnjo: uporabnik izbere zrakoplov, vidi razloge za opozorilo, priporocen ukrep, heuristicno projekcijo ter napoved iz naucenih modelov. Uporabnik lahko prilagodi prag nizke visine, hitrosti spuscanja, visoke hitrosti in minimalnega attention score; nastavitve se shranijo lokalno v brskalniku in takoj vplivajo na prioritetno vrsto.
 
-Poleg dveh lastno naucenih nevronskih mrez projekt vkljucuje tudi opcijsko integracijo z obstojecim naucenim modelom `typeform/distilbert-base-uncased-mnli` iz HuggingFace za zero-shot klasifikacijo tekstovnega opisa tveganja leta. Integracija se vklopi z okoljsko spremenljivko `HF_INFERENCE_ENABLED=true`, za avtentikacijo pa lahko uporabis `HF_API_TOKEN`.
+Poleg dveh lastno naucenih nevronskih mrez projekt vkljucuje tudi opcijsko integracijo z obstojecim naucenim modelom `facebook/bart-large-mnli` iz HuggingFace za zero-shot klasifikacijo tekstovnega opisa tveganja leta. Ustvari lokalno datoteko `.env` po vzoru `.env.example`, nastavi `HF_INFERENCE_ENABLED=true` in dodaj `HF_TOKEN` z dovoljenjem Inference Providers. Brez teh nastavitev osnovna aplikacija normalno deluje, kartica pa model oznaci kot opcijsko izklopljen.
 
 Razsirjena administratorska plosca zdruzuje:
 
@@ -387,25 +396,50 @@ Ko `frontend/dist` obstaja, ga FastAPI servira na `/`.
 
 ## Docker in namestitev v produkcijo
 
-Projekt vsebuje [Dockerfile](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/Dockerfile:1), ki najprej zgradi React frontend, nato zapakira FastAPI aplikacijo, modele, porocila in obdelane podatke v produkcijsko sliko. GitHub Actions workflow [docker.yml](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/.github/workflows/docker.yml:1) naredi:
+Produkcijska namestitev uporablja hibridni arhitekturni vzorec:
 
-- `dvc pull` za produkcijske artefakte,
-- Docker build,
-- push slike v GitHub Container Registry,
-- opcijski klic `PRODUCTION_DEPLOY_HOOK_URL` za namestitev na izbrani produkcijski ponudnik.
+- javni `skywatch-api` servis zdruzuje React in FastAPI,
+- zasebni `skywatch-model-service` izvaja spletne napovedi z ONNX Runtime,
+- DVC faza `batch_predict` pripravi paketne napovedi za odpornost ob nedosegljivem modelnem servisu,
+- javni API lahko lokalni ONNX izvede tudi kot rezervni vzorec model-as-dependency.
+
+S tem projekt demonstrira online Model as a Service, batch/offline napovedovanje in hibridno kombinacijo obeh pristopov. Shadow testing ostaja pristop testiranja modela in ni vec napacno prikazan kot arhitekturni vzorec namestitve.
 
 Lokalni Docker zagon:
 
 ```bash
-docker build -t skywatch .
-docker run --rm -p 8000:8000 skywatch
+docker compose up --build
 ```
+
+Po zagonu sta na voljo:
+
+- uporabniski vmesnik in javni API na `http://127.0.0.1:8000`,
+- zasebni modelni servis za lokalno preverjanje na `http://127.0.0.1:8001/health`.
+
+### Render
+
+Datoteka `render.yaml` definira javni in zasebni servis v regiji Frankfurt. Zasebni servisi na Renderju nimajo brezplacnega paketa, zato Blueprint uporablja paket `starter`.
+
+1. V GitHub nastavitvah ustvari Personal Access Token z dovoljenjem `read:packages`.
+2. V Render `Workspace Settings > Container Registry Credentials` dodaj GHCR poverilnico z imenom `github-container-registry`.
+3. V Render izberi `New > Blueprint`, povezi repozitorij in uporabi korensko datoteko `render.yaml`.
+4. Po prvi izdelavi slik v obeh Render servisih kopiraj Deploy Hook URL.
+5. V GitHub Actions secrets dodaj `RENDER_MODEL_DEPLOY_HOOK_URL` in `RENDER_API_DEPLOY_HOOK_URL`.
+
+GitHub Actions workflow `.github/workflows/docker.yml` po uspesnem podatkovnem cevovodu:
+
+- prenese DVC artefakte,
+- zgradi in objavi `api-latest` ter `model-latest` sliki v GHCR,
+- najprej sprozi namestitev zasebnega modelnega servisa,
+- nato sprozi namestitev javnega API servisa.
+
+Render sam ustvari skupni `MODEL_SERVICE_TOKEN` in zasebni naslov modelnega servisa posreduje javnemu servisu. V produkciji je lokalni modelni fallback izklopljen; ce je modelni servis zacasno nedosegljiv, API uporabi zadnjo paketno napoved.
 
 ## GitHub Actions in DVC
 
 GitHub Actions workflow uporablja Python 3.11, regenerira `uv.lock`, izvede `uv sync --locked`, nato pa z `dvc repro` pozene celoten tok:
 
-`fetch -> preprocess -> validate -> test_data -> train -> monitor`
+`fetch -> preprocess -> validate + test_data -> train -> batch_predict -> monitor`
 
 Po tem:
 

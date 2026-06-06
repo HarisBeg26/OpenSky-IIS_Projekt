@@ -37,6 +37,7 @@ test_data:
   report_json: "reports/evidently/opensky_data_drift_summary.json"
   min_rows: 30
   drift_share: 0.7
+  max_reference_current_row_ratio: 20.0
   drop_columns:
     - "icao24"
     - "callsign"
@@ -54,15 +55,29 @@ train:
   history_file: "data/processed/states_history.csv"
   models_dir: "models/opensky"
   metrics_path: "reports/model_training/opensky_metrics.json"
+  compression_report_path: "reports/model_compression/opensky_compression.json"
+  explainability_report_path: "reports/model_explainability/opensky_explainability.json"
   mlflow_tracking_uri: "https://dagshub.com/HarisBeg26/OpenSky-IIS_Projekt.mlflow"
   mlflow_experiment_name: "OpenSky-IIS_Projekt_train"
+  mlflow_mode: "auto"
   register_models: true
+  local_mlflow_fallback: true
+  require_remote_mlflow: false
   trajectory_registered_model_name: "OpenSkyTrajectoryLSTM"
   on_ground_registered_model_name: "OpenSkyOnGroundLSTM"
   await_model_registration_seconds: 120
+  compression_enabled: true
+  compression_method: "float16_weight_quantization"
+  quantization_dtype: "float16"
+  explainability_enabled: true
+  explainability_sample_size: 1000
+  explainability_repeats: 1
+  explainability_top_n: 10
   test_size: 0.2
   max_sequences: 12000
-  window_size: 2
+  window_size: 1
+  max_sequence_gap_seconds: 1800
+  trajectory_target_mode: "delta"
   random_state: 42
   lstm_units: 64
   dense_units: 32
@@ -84,11 +99,23 @@ train:
     - "spi"
     - "position_source"
 
+batch_prediction:
+  processed_dir: "data/processed"
+  output_file: "data/predictions/latest_predictions.json"
+  max_aircraft: 250
+
 monitoring:
   report_path: "reports/model_monitoring/production_model_monitoring.json"
   processed_dir: "data/processed"
   models_dir: "models/opensky"
   training_metrics: "reports/model_training/opensky_metrics.json"
+  compression_report: "reports/model_compression/opensky_compression.json"
+  explainability_report: "reports/model_explainability/opensky_explainability.json"
+  deployment_report_path: "reports/deployment/model_deployment_patterns.json"
+  batch_predictions: "data/predictions/latest_predictions.json"
   max_trajectory_mae: 5.0
+  max_trajectory_mean_distance_km: 75.0
+  min_trajectory_skill_score: 0.0
   min_on_ground_accuracy: 0.85
+  min_on_ground_f1: 0.10
   max_data_age_hours: 72

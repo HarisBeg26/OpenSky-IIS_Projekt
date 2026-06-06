@@ -5,9 +5,7 @@ from typing import Any
 
 import requests
 
-PRETRAINED_MODEL_ID = "typeform/distilbert-base-uncased-mnli"
-PRETRAINED_MODEL_URL = f"https://huggingface.co/{PRETRAINED_MODEL_ID}"
-HF_INFERENCE_URL = f"https://api-inference.huggingface.co/models/{PRETRAINED_MODEL_ID}"
+DEFAULT_PRETRAINED_MODEL_ID = "facebook/bart-large-mnli"
 DEFAULT_LABELS = ["nominal flight", "watch flight", "critical landing risk", "ground operation"]
 
 
@@ -23,47 +21,97 @@ def build_flight_risk_text(state: dict[str, Any], insight: dict[str, Any]) -> st
 
 def classify_with_pretrained_model(text: str, labels: list[str] | None = None) -> dict[str, Any]:
     labels = labels or DEFAULT_LABELS
+    model_id = os.getenv("HF_MODEL_ID", DEFAULT_PRETRAINED_MODEL_ID)
+    model_url = f"https://huggingface.co/{model_id}"
+    inference_url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
     if os.getenv("HF_INFERENCE_ENABLED", "").strip().lower() not in {"1", "true", "yes", "on"}:
         return {
             "status": "disabled",
-            "model_id": PRETRAINED_MODEL_ID,
-            "model_url": PRETRAINED_MODEL_URL,
+            "model_id": model_id,
+            "model_url": model_url,
             "task": "zero-shot-classification",
-            "message": "Set HF_INFERENCE_ENABLED=true to call the pretrained HuggingFace model.",
+            "message": "Optional external model is disabled. Enable it in .env when needed.",
             "candidate_labels": labels,
         }
 
-    headers = {}
-    token = os.getenv("HF_API_TOKEN") or os.getenv("HUGGINGFACE_API_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    token = (
+        os.getenv("HF_TOKEN")
+        or os.getenv("HF_API_TOKEN")
+        or os.getenv("HUGGINGFACE_API_TOKEN")
+    )
+    if not token:
+        return {
+            "status": "configuration_required",
+            "model_id": model_id,
+            "model_url": model_url,
+            "task": "zero-shot-classification",
+            "message": "HF_INFERENCE_ENABLED is true, but HF_TOKEN is not configured.",
+            "candidate_labels": labels,
+        }
 
     try:
         response = requests.post(
-            HF_INFERENCE_URL,
-            headers=headers,
+            inference_url,
+            headers={"Authorization": f"Bearer {token}"},
             json={"inputs": text, "parameters": {"candidate_labels": labels}},
-            timeout=15,
+            timeout=30,
         )
         response.raise_for_status()
         payload = response.json()
     except requests.RequestException as exc:
         return {
             "status": "unavailable",
-            "model_id": PRETRAINED_MODEL_ID,
-            "model_url": PRETRAINED_MODEL_URL,
+            "model_id": model_id,
+            "model_url": model_url,
             "task": "zero-shot-classification",
-            "message": str(exc),
+            "message": f"HuggingFace inference is currently unavailable: {exc}",
             "candidate_labels": labels,
         }
 
+    predictions = _normalize_predictions(payload)
     return {
         "status": "ready",
-        "model_id": PRETRAINED_MODEL_ID,
-        "model_url": PRETRAINED_MODEL_URL,
+        "model_id": model_id,
+        "model_url": model_url,
         "task": "zero-shot-classification",
-        "labels": payload.get("labels", []),
-        "scores": payload.get("scores", []),
-        "top_label": payload.get("labels", [None])[0] if payload.get("labels") else None,
-        "top_score": payload.get("scores", [None])[0] if payload.get("scores") else None,
+        "labels": [item["label"] for item in predictions],
+        "scores": [item["score"] for item in predictions],
+        "top_label": predictions[0]["label"] if predictions else None,
+        "top_score": predictions[0]["score"] if predictions else None,
     }
+
+
+def pretrained_model_status() -> dict[str, Any]:
+    model_id = os.getenv("HF_MODEL_ID", DEFAULT_PRETRAINED_MODEL_ID)
+    enabled = os.getenv("HF_INFERENCE_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+    token_configured = bool(
+        os.getenv("HF_TOKEN")
+        or os.getenv("HF_API_TOKEN")
+        or os.getenv("HUGGINGFACE_API_TOKEN")
+    )
+    return {
+        "model_id": model_id,
+        "model_url": f"https://huggingface.co/{model_id}",
+        "source": "HuggingFace Inference Providers",
+        "task": "zero-shot-classification",
+        "enabled": enabled,
+        "token_configured": token_configured,
+        "status": "ready" if enabled and token_configured else "disabled" if not enabled else "configuration_required",
+    }
+
+
+def _normalize_predictions(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict) and isinstance(payload.get("labels"), list):
+        predictions = [
+            {"label": label, "score": float(score)}
+            for label, score in zip(payload.get("labels", []), payload.get("scores", []))
+        ]
+    elif isinstance(payload, list):
+        predictions = [
+            {"label": str(item["label"]), "score": float(item["score"])}
+            for item in payload
+            if isinstance(item, dict) and "label" in item and "score" in item
+        ]
+    else:
+        predictions = []
+    return sorted(predictions, key=lambda item: item["score"], reverse=True)

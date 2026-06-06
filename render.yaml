@@ -1,0 +1,46 @@
+services:
+  - type: pserv
+    runtime: image
+    name: skywatch-model-service
+    region: frankfurt
+    plan: starter
+    image:
+      url: ghcr.io/harisbeg26/opensky-iis-projekt:model-latest
+      creds:
+        fromRegistryCreds:
+          name: github-container-registry
+    envVars:
+      - key: MODEL_SERVICE_TOKEN
+        generateValue: true
+
+  - type: web
+    runtime: image
+    name: skywatch-api
+    region: frankfurt
+    plan: starter
+    image:
+      url: ghcr.io/harisbeg26/opensky-iis-projekt:api-latest
+      creds:
+        fromRegistryCreds:
+          name: github-container-registry
+    healthCheckPath: /api/health
+    envVars:
+      - key: MODEL_SERVICE_HOST
+        fromService:
+          name: skywatch-model-service
+          type: pserv
+          property: host
+      - key: MODEL_SERVICE_PORT
+        fromService:
+          name: skywatch-model-service
+          type: pserv
+          property: port
+      - key: MODEL_SERVICE_TOKEN
+        fromService:
+          name: skywatch-model-service
+          type: pserv
+          envVarKey: MODEL_SERVICE_TOKEN
+      - key: ALLOW_LOCAL_MODEL_FALLBACK
+        value: "false"
+      - key: HF_INFERENCE_ENABLED
+        value: "false"

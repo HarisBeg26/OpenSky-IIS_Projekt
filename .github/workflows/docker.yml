@@ -17,7 +17,7 @@ env:
 
 jobs:
   docker:
-    name: Build and publish SkyWatch image
+    name: Build and publish SkyWatch services
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
 
@@ -61,6 +61,7 @@ jobs:
           test -f models/opensky/preprocessors.pkl
           test -f reports/model_training/opensky_metrics.json
           test -f reports/model_monitoring/production_model_monitoring.json
+          test -f data/predictions/latest_predictions.json
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -72,23 +73,45 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
+      - name: Build and push public API image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ env.IMAGE_NAME }}:api-latest
+            ${{ env.IMAGE_NAME }}:api-${{ github.sha }}
+          cache-from: type=gha,scope=skywatch-api
+          cache-to: type=gha,mode=max,scope=skywatch-api
 
-      - name: Trigger production deploy hook
+      - name: Build and push private model image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/model-service.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:model-latest
+            ${{ env.IMAGE_NAME }}:model-${{ github.sha }}
+          cache-from: type=gha,scope=skywatch-model
+          cache-to: type=gha,mode=max,scope=skywatch-model
+
+      - name: Trigger Render model deploy
         env:
-          PRODUCTION_DEPLOY_HOOK_URL: ${{ secrets.PRODUCTION_DEPLOY_HOOK_URL }}
+          RENDER_MODEL_DEPLOY_HOOK_URL: ${{ secrets.RENDER_MODEL_DEPLOY_HOOK_URL }}
         run: |
-          if [ -z "$PRODUCTION_DEPLOY_HOOK_URL" ]; then
-            echo "PRODUCTION_DEPLOY_HOOK_URL is not configured. Image was published to GHCR only."
+          if [ -z "$RENDER_MODEL_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_MODEL_DEPLOY_HOOK_URL is not configured. Model image was published to GHCR only."
             exit 0
           fi
-          curl -fsS -X POST "$PRODUCTION_DEPLOY_HOOK_URL"
+          curl -fsS -X POST "$RENDER_MODEL_DEPLOY_HOOK_URL"
+
+      - name: Trigger Render API deploy
+        env:
+          RENDER_API_DEPLOY_HOOK_URL: ${{ secrets.RENDER_API_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_API_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_API_DEPLOY_HOOK_URL is not configured. API image was published to GHCR only."
+            exit 0
+          fi
+          curl -fsS -X POST "$RENDER_API_DEPLOY_HOOK_URL"

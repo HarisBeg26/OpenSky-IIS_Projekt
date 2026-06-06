@@ -171,7 +171,13 @@ function App() {
         </section>
       </main>
       <AdminSnapshot admin={admin} />
-      <AdvancedAdmin advanced={advanced} onStageChange={updateModelStage} />
+      <AdvancedAdmin
+        advanced={advanced}
+        selectedAircraft={selectedAircraft}
+        prediction={prediction}
+        predictionState={predictionState}
+        onStageChange={updateModelStage}
+      />
     </Shell>
   );
 }
@@ -187,7 +193,7 @@ function Shell({ children }) {
         <nav>
           <a href="#copilot">Copilot</a>
           <a href="#admin">Admin</a>
-          <a href="/docs">API docs</a>
+          <a href="/docs" target="_blank" rel="noreferrer">API docs</a>
         </nav>
       </header>
       <div className="shell" id="copilot">{children}</div>
@@ -266,9 +272,44 @@ function buildAdvancedFallback(admin) {
     report_links: [],
     lifecycle_stages: ["Archived", "Candidate", "Production", "Staging"],
     pretrained_model: {
-      model_id: "typeform/distilbert-base-uncased-mnli",
-      source: "HuggingFace",
+      model_id: "facebook/bart-large-mnli",
+      source: "HuggingFace Inference Providers",
       task: "zero-shot-classification"
+    },
+    compression: admin.compression || {
+      status: "missing",
+      message: "Compression report is missing.",
+      models: []
+    },
+    explainability: admin.explainability || {
+      status: "missing",
+      method: "permutation_feature_importance",
+      top_trajectory_features: [],
+      top_on_ground_features: []
+    },
+    deployment_patterns: admin.deployment || {
+      status: "fallback",
+      active_pattern: "hybrid_online_and_batch_inference",
+      patterns: [
+        {
+          key: "online_model_as_a_service",
+          name: "Online model as a service",
+          status: "ready",
+          description: "A private ONNX service performs online inference."
+        },
+        {
+          key: "batch_offline_prediction",
+          name: "Batch/offline prediction",
+          status: "pending",
+          description: "DVC prepares resilient predictions from the latest snapshot."
+        },
+        {
+          key: "online_model_as_dependency",
+          name: "Embedded ONNX fallback",
+          status: "ready",
+          description: "FastAPI can execute local ONNX artifacts if the model service is unavailable."
+        }
+      ]
     },
     shadow_testing: {
       status: "fallback",
@@ -431,21 +472,21 @@ function PredictionCard({ aircraft, prediction, state }) {
         <Metric label="Model next latitude" value={modelPrediction.next_latitude == null ? "loading" : format(modelPrediction.next_latitude)} />
         <Metric label="Model next longitude" value={modelPrediction.next_longitude == null ? "loading" : format(modelPrediction.next_longitude)} />
         <Metric label="On-ground probability" value={modelPrediction.next_on_ground_probability == null ? "loading" : formatPercent(modelPrediction.next_on_ground_probability)} />
+        <Metric label="Serving mode" value={prediction?.serving?.pattern || "waiting"} />
       </div>
       <div className="recommendation">
         <h3>Recommended action</h3>
         <p>{prediction?.decision_support?.recommended_action || aircraft.recommended_action}</p>
-        <small>{state === "ready" ? "Prediction loaded from trained Keras models." : state}</small>
+        <small>{predictionStatusMessage(state)}</small>
       </div>
       <div className="model-evidence">
         <article>
           <span>Pretrained model</span>
-          <strong>{pretrained.top_label || pretrained.status || "waiting"}</strong>
+          <strong>{pretrainedModelLabel(pretrained)}</strong>
           <p>
-            {pretrained.model_id || "typeform/distilbert-base-uncased-mnli"} -
             {pretrained.status === "ready"
-              ? ` zero-shot score ${formatPercent(pretrained.top_score)}`
-              : " optional HuggingFace zero-shot classifier"}
+              ? `${pretrained.model_id} - zero-shot score ${formatPercent(pretrained.top_score)}`
+              : pretrained.message || "Optional HuggingFace zero-shot classifier."}
           </p>
         </article>
         <article>
@@ -462,14 +503,23 @@ function AdminSnapshot({ admin }) {
   const training = admin.training?.models || {};
   const trajectory = training.trajectory_lstm || {};
   const ground = training.on_ground_lstm || {};
+  const hasTrainingMetrics = Boolean(training.trajectory_lstm || training.on_ground_lstm);
   return (
     <section className="admin-section panel" id="admin">
       <PanelTitle icon={<TerminalSquare />} title="Admin intelligence snapshot" detail="Validation, drift and model state" />
       <div className="admin-grid">
         <Metric label="Great Expectations" value={admin.validation?.status || "missing"} />
         <Metric label="Evidently drift" value={admin.drift?.status || "missing"} />
-        <Metric label="Trajectory MAE" value={`${format(trajectory.mae_latitude)} / ${format(trajectory.mae_longitude)}`} />
-        <Metric label="On-ground accuracy" value={formatPercent(ground.accuracy)} />
+        <Metric
+          label="Trajectory MAE"
+          value={hasTrainingMetrics
+            ? `${format(trajectory.mae_latitude)} / ${format(trajectory.mae_longitude)}`
+            : "run model training"}
+        />
+        <Metric
+          label="On-ground accuracy"
+          value={hasTrainingMetrics ? formatPercent(ground.accuracy) : "run model training"}
+        />
       </div>
       <div className="artifact-row">
         {(admin.models || []).map((model) => (
@@ -483,7 +533,7 @@ function AdminSnapshot({ admin }) {
   );
 }
 
-function AdvancedAdmin({ advanced, onStageChange }) {
+function AdvancedAdmin({ advanced, selectedAircraft, prediction, predictionState, onStageChange }) {
   return (
     <section className="advanced-admin panel">
       <PanelTitle icon={<Layers />} title="Advanced admin console" detail="Quality, registry and lifecycle control" />
@@ -498,15 +548,15 @@ function AdvancedAdmin({ advanced, onStageChange }) {
           <dl>
             <div>
               <dt>Experiment</dt>
-              <dd>{advanced.experiment_tracking?.experiment_name || "missing"}</dd>
+              <dd>{advanced.experiment_tracking?.experiment_name || "Created during model training"}</dd>
             </div>
             <div>
               <dt>Tracking URI</dt>
-              <dd>{advanced.experiment_tracking?.tracking_uri || "missing"}</dd>
+              <dd>{advanced.experiment_tracking?.tracking_uri || "Configured when training starts"}</dd>
             </div>
             <div>
               <dt>Registry</dt>
-              <dd>{advanced.experiment_tracking?.registry_enabled ? "enabled" : "waiting for next run"}</dd>
+              <dd>{advanced.experiment_tracking?.registry_enabled ? "enabled" : "Available after a successful training run"}</dd>
             </div>
           </dl>
           <div className="metric-cloud">
@@ -517,6 +567,9 @@ function AdvancedAdmin({ advanced, onStageChange }) {
         </article>
         <article className="deep-card reports-card">
           <h3><Database /> Evidence reports</h3>
+          <p className="deep-note">
+            HTML reports open in a new tab. JSON links show the raw pipeline result.
+          </p>
           <div className="report-list">
             {(advanced.report_links || []).map((report) => (
               report.url && report.available ? (
@@ -540,11 +593,11 @@ function AdvancedAdmin({ advanced, onStageChange }) {
           <dl>
             <div>
               <dt>Model</dt>
-              <dd>{advanced.pretrained_model?.model_id || "typeform/distilbert-base-uncased-mnli"}</dd>
+              <dd>{advanced.pretrained_model?.model_id || "facebook/bart-large-mnli"}</dd>
             </div>
             <div>
               <dt>Source</dt>
-              <dd>{advanced.pretrained_model?.source || "HuggingFace"}</dd>
+              <dd>{advanced.pretrained_model?.source || "HuggingFace Inference Providers"}</dd>
             </div>
             <div>
               <dt>Task</dt>
@@ -552,20 +605,17 @@ function AdvancedAdmin({ advanced, onStageChange }) {
             </div>
           </dl>
         </article>
-        <article className="deep-card">
-          <h3><Activity /> Shadow testing</h3>
-          <dl>
-            <div>
-              <dt>Status</dt>
-              <dd>{advanced.shadow_testing?.status || "missing"}</dd>
-            </div>
-            <div>
-              <dt>Strategy</dt>
-              <dd>{advanced.shadow_testing?.strategy || "trajectory_lstm_vs_kinematic_baseline"}</dd>
-            </div>
-          </dl>
-          <p className="deep-note">{advanced.shadow_testing?.message || "Live predictions include model-vs-baseline comparison."}</p>
-        </article>
+        <ShadowTestingPanel
+          summary={advanced.shadow_testing}
+          selectedAircraft={selectedAircraft}
+          prediction={prediction}
+          predictionState={predictionState}
+        />
+      </div>
+      <div className="admin-feature-grid">
+        <DeploymentPatternsCard deployment={advanced.deployment_patterns} />
+        <CompressionCard compression={advanced.compression} />
+        <ExplainabilityCard explainability={advanced.explainability} />
       </div>
       <ModelRegistryBoard
         models={advanced.model_registry || []}
@@ -573,6 +623,167 @@ function AdvancedAdmin({ advanced, onStageChange }) {
         onStageChange={onStageChange}
       />
     </section>
+  );
+}
+
+function DeploymentPatternsCard({ deployment }) {
+  const patterns = deployment?.patterns || [];
+  return (
+    <article className="deep-card feature-card">
+      <h3><Layers /> Deployment patterns</h3>
+      <p className="deep-note">
+        Active pattern: <strong>{deployment?.active_pattern || "hybrid_online_and_batch_inference"}</strong>
+      </p>
+      <div className="pattern-list">
+        {patterns.map((pattern) => (
+          <div className="pattern-item" key={pattern.key || pattern.name}>
+            <span className={`mini-status ${pattern.status || "missing"}`}>{pattern.status || "missing"}</span>
+            <strong>{pattern.name}</strong>
+            <p>{pattern.description}</p>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function CompressionCard({ compression }) {
+  const summary = compression?.summary || {};
+  const models = compression?.models || [];
+  if (!models.length) {
+    return (
+      <article className="deep-card feature-card">
+        <h3><Gauge /> Model compression</h3>
+        <p className="deep-note">
+          Run <code>uv run python main.py train</code> to create float16 quantized model weights
+          and the compression report.
+        </p>
+      </article>
+    );
+  }
+  return (
+    <article className="deep-card feature-card">
+      <h3><Gauge /> Model compression</h3>
+      <div className="compression-hero">
+        <span>{compression?.primary_method || "float16 weight quantization"}</span>
+        <strong>{formatPercent(summary.best_storage_reduction_vs_keras)}</strong>
+        <p>
+          {summary.storage_candidate || "float16 quantized weights"} are generated as NN compression artifacts;
+          {summary.runtime_candidate || " Keras/ONNX"} remains available for serving.
+        </p>
+      </div>
+      <div className="compression-list">
+        {models.map((model) => (
+          <div key={model.model_key}>
+            <span>{model.model_key}</span>
+            <strong>{formatBytes(model.quantized_weight_archive_size_bytes)}</strong>
+            <small>{formatPercent(model.quantized_archive_vs_keras_ratio)} of Keras size</small>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function ExplainabilityCard({ explainability }) {
+  const trajectory = explainability?.top_trajectory_features || [];
+  const onGround = explainability?.top_on_ground_features || [];
+  return (
+    <article className="deep-card feature-card">
+      <h3><Brain /> Model explainability</h3>
+      <p className="deep-note">
+        {explainability?.method_note || `Method: ${explainability?.method || "permutation_feature_importance"}`}
+      </p>
+      <FeatureBars
+        title="Trajectory drivers"
+        features={trajectory}
+        valueKey="trajectory_distance_increase_m"
+        formatter={formatDistance}
+      />
+      <FeatureBars
+        title="On-ground drivers"
+        features={onGround}
+        valueKey="on_ground_f1_drop"
+        formatter={formatPercent}
+      />
+    </article>
+  );
+}
+
+function FeatureBars({ title, features, valueKey, formatter }) {
+  const maxValue = Math.max(...features.map((feature) => Math.max(0, Number(feature[valueKey]) || 0)), 1);
+  return (
+    <div className="feature-bars">
+      <span>{title}</span>
+      {features.slice(0, 5).map((feature) => {
+        const value = Number(feature[valueKey]) || 0;
+        const width = `${Math.max(8, Math.min(100, (Math.max(0, value) / maxValue) * 100))}%`;
+        return (
+          <div className="feature-bar" key={`${title}-${feature.feature}`}>
+            <div>
+              <strong>{feature.feature}</strong>
+              <small>{formatter(value)}</small>
+            </div>
+            <i style={{ width }} />
+          </div>
+        );
+      })}
+      {!features.length && (
+        <p className="deep-note">
+          Run <code>uv run python main.py train</code> to generate this explanation.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ShadowTestingPanel({ summary, selectedAircraft, prediction, predictionState }) {
+  const shadow = prediction?.shadow_evaluation || {};
+  const modelPrediction = prediction?.prediction || {};
+  const forecast = selectedAircraft?.forecast || {};
+  const liveStatus = shadow.status || (predictionState === "ready" ? "unavailable" : predictionState);
+  const statusClass = ["aligned", "review", "watch", "loading", "unavailable", "missing"].includes(liveStatus)
+    ? liveStatus
+    : "unavailable";
+  const distance = shadow.distance_m == null || Number.isNaN(Number(shadow.distance_m))
+    ? "waiting"
+    : formatDistance(shadow.distance_m);
+  const message = shadow.message
+    || (predictionState && !["idle", "loading", "ready"].includes(predictionState)
+      ? predictionStatusMessage(predictionState)
+      : selectedAircraft
+        ? `Waiting for live prediction for ${selectedAircraft.callsign || selectedAircraft.icao24}.`
+        : "Select an aircraft to run live shadow comparison.");
+
+  return (
+    <article className="deep-card shadow-card">
+      <h3><Activity /> Shadow testing</h3>
+      <div className={`shadow-status ${statusClass}`}>
+        <span>{liveStatus || "waiting"}</span>
+        <strong>{distance}</strong>
+        <p>{message}</p>
+      </div>
+      <div className="shadow-comparison">
+        <Metric label="Baseline latitude" value={forecast.latitude == null ? "waiting" : format(forecast.latitude)} />
+        <Metric label="Model latitude" value={modelPrediction.next_latitude == null ? "waiting" : format(modelPrediction.next_latitude)} />
+        <Metric label="Baseline longitude" value={forecast.longitude == null ? "waiting" : format(forecast.longitude)} />
+        <Metric label="Model longitude" value={modelPrediction.next_longitude == null ? "waiting" : format(modelPrediction.next_longitude)} />
+      </div>
+      <dl>
+        <div>
+          <dt>Strategy</dt>
+          <dd>{summary?.strategy || shadow.baseline || "trajectory_lstm_vs_kinematic_baseline"}</dd>
+        </div>
+        <div>
+          <dt>Current aircraft</dt>
+          <dd>{selectedAircraft?.callsign || selectedAircraft?.icao24 || "not selected"}</dd>
+        </div>
+      </dl>
+      <p className="deep-note">
+        Shadow test primerja nas nauceni LSTM model z enostavnim kinematicnim baseline modelom.
+        Nizja razdalja pomeni, da se model in baseline strinjata glede naslednje pozicije.
+      </p>
+    </article>
   );
 }
 
@@ -667,9 +878,42 @@ function format(value) {
   return number.format(Number(value));
 }
 
+function predictionStatusMessage(state) {
+  if (state === "ready") return "Prediction loaded through the configured ONNX serving path.";
+  if (state === "loading") return "Loading the model prediction...";
+  if (state === "idle") return "Select an aircraft to request a model prediction.";
+  if (typeof state === "string" && state.toLowerCase().includes("missing model artifacts")) {
+    return "The trained model is incomplete. Run: uv run python main.py train";
+  }
+  return state || "Model prediction is not available.";
+}
+
+function pretrainedModelLabel(model) {
+  if (model?.top_label) return model.top_label;
+  if (model?.status === "configuration_required") return "HF token required";
+  if (model?.status === "disabled") return "optional - disabled";
+  if (model?.status === "unavailable") return "temporarily unavailable";
+  return model?.status || "waiting";
+}
+
 function formatPercent(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "n/a";
   return `${number.format(Number(value) * 100)}%`;
+}
+
+function formatDistance(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "n/a";
+  const meters = Number(value);
+  if (meters >= 1000) return `${number.format(meters / 1000)} km`;
+  return `${number.format(meters)} m`;
+}
+
+function formatBytes(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "n/a";
+  const bytes = Number(value);
+  if (bytes >= 1024 * 1024) return `${number.format(bytes / (1024 * 1024))} MB`;
+  if (bytes >= 1024) return `${number.format(bytes / 1024)} KB`;
+  return `${number.format(bytes)} B`;
 }
 
 createRoot(document.getElementById("root")).render(<App />);

@@ -18,6 +18,7 @@ DEFAULT_REPORT_HTML = "reports/evidently/opensky_data_drift_report.html"
 DEFAULT_REPORT_JSON = "reports/evidently/opensky_data_drift_summary.json"
 DEFAULT_MIN_ROWS = 30
 DEFAULT_DRIFT_SHARE = 0.7
+DEFAULT_MAX_REFERENCE_CURRENT_ROW_RATIO = 20.0
 DEFAULT_DROP_COLUMNS = [
     "icao24",
     "callsign",
@@ -47,6 +48,7 @@ def _load_test_params(params_path: str = "params.yaml") -> dict:
         "report_json": DEFAULT_REPORT_JSON,
         "min_rows": DEFAULT_MIN_ROWS,
         "drift_share": DEFAULT_DRIFT_SHARE,
+        "max_reference_current_row_ratio": DEFAULT_MAX_REFERENCE_CURRENT_ROW_RATIO,
         "drop_columns": DEFAULT_DROP_COLUMNS,
     }
     params_file = _project_path(params_path)
@@ -63,6 +65,12 @@ def _load_test_params(params_path: str = "params.yaml") -> dict:
         "report_json": test_params.get("report_json", defaults["report_json"]),
         "min_rows": int(test_params.get("min_rows", defaults["min_rows"])),
         "drift_share": float(test_params.get("drift_share", defaults["drift_share"])),
+        "max_reference_current_row_ratio": float(
+            test_params.get(
+                "max_reference_current_row_ratio",
+                defaults["max_reference_current_row_ratio"],
+            )
+        ),
         "drop_columns": test_params.get("drop_columns", defaults["drop_columns"]),
     }
 
@@ -136,6 +144,7 @@ def _evaluate_gate(
     failed_tests: list[dict],
     min_rows: int,
     drift_share: float,
+    max_reference_current_row_ratio: float,
 ) -> tuple[bool, str, dict]:
     failed_count = len(failed_tests)
 
@@ -144,6 +153,7 @@ def _evaluate_gate(
         "reference_rows": reference_rows,
         "min_rows": min_rows,
         "dataset_drift_share_threshold": drift_share,
+        "max_reference_current_row_ratio": max_reference_current_row_ratio,
         "total_tests": total_tests,
         "failed_test_count": failed_count,
     }
@@ -154,6 +164,17 @@ def _evaluate_gate(
             f"current={current_rows}, reference={reference_rows}, required>={min_rows}."
         )
         gate_details["decision"] = "insufficient_rows"
+        return True, reason, gate_details
+
+    row_ratio = max(current_rows, reference_rows) / max(1, min(current_rows, reference_rows))
+    gate_details["row_count_ratio"] = row_ratio
+    if row_ratio > max_reference_current_row_ratio:
+        reason = (
+            "Reference and current snapshots are not comparable for strict drift gating: "
+            f"row_count_ratio={row_ratio:.2f}, allowed<={max_reference_current_row_ratio:.2f}. "
+            "Refreshing the reference snapshot after writing the Evidently report."
+        )
+        gate_details["decision"] = "reference_not_comparable"
         return True, reason, gate_details
 
     if failed_count > 0:
@@ -273,6 +294,7 @@ def test_opensky_data(
             failed_tests=failed_tests,
             min_rows=int(params["min_rows"]),
             drift_share=float(params["drift_share"]),
+            max_reference_current_row_ratio=float(params["max_reference_current_row_ratio"]),
         )
 
         gate_metric = {

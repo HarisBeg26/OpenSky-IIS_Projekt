@@ -1,121 +1,106 @@
 from __future__ import annotations
 
-import pickle
-from functools import lru_cache
+import json
+import os
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
+import requests
 
-from src.model.preprocess import normalize_opensky_history, read_history
+from src.inference.data import PredictionInputError, prepare_aircraft_request
+from src.inference.onnx import predict_with_onnx
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-MODELS_DIR = PROJECT_ROOT / "models" / "opensky"
-HISTORY_FILE = PROJECT_ROOT / "data" / "processed" / "states_history.csv"
+BATCH_PREDICTIONS_FILE = PROJECT_ROOT / "data" / "predictions" / "latest_predictions.json"
 
 
 class PredictionError(Exception):
     """Raised when prediction cannot be produced for a requested aircraft."""
 
 
-@lru_cache(maxsize=1)
-def _load_artifacts():
-    trajectory_path = MODELS_DIR / "trajectory_lstm.keras"
-    ground_path = MODELS_DIR / "on_ground_lstm.keras"
-    preprocessors_path = MODELS_DIR / "preprocessors.pkl"
-    missing = [path for path in [trajectory_path, ground_path, preprocessors_path] if not path.exists()]
-    if missing:
-        raise FileNotFoundError(f"Missing model artifacts: {[str(path) for path in missing]}")
-
-    import tensorflow as tf
-
-    trajectory_model = tf.keras.models.load_model(trajectory_path)
-    ground_model = tf.keras.models.load_model(ground_path)
-    with preprocessors_path.open("rb") as file:
-        preprocessors = pickle.load(file)
-    return trajectory_model, ground_model, preprocessors
-
-
 def predict_aircraft_state(icao24: str) -> dict[str, Any]:
-    if not HISTORY_FILE.exists():
-        raise FileNotFoundError(f"Processed history not found: {HISTORY_FILE}")
+    try:
+        request = prepare_aircraft_request(icao24)
+    except PredictionInputError as exc:
+        raise PredictionError(str(exc)) from exc
 
-    trajectory_model, ground_model, preprocessors = _load_artifacts()
-    feature_columns = preprocessors["feature_columns"]
-    window_size = int(preprocessors["window_size"])
+    model_service_url = _model_service_url()
+    if model_service_url:
+        try:
+            return _remote_prediction(model_service_url, request)
+        except requests.RequestException as exc:
+            batch = load_batch_prediction(icao24)
+            if batch:
+                return {
+                    **batch,
+                    "serving": {
+                        "pattern": "batch_offline_fallback",
+                        "service": "skywatch-api",
+                        "fallback_reason": str(exc),
+                    },
+                }
+            if not _env_bool("ALLOW_LOCAL_MODEL_FALLBACK", default=True):
+                raise FileNotFoundError(f"Private model service is unavailable: {exc}") from exc
 
-    history = normalize_opensky_history(read_history(HISTORY_FILE))
-    aircraft = _aircraft_history(history, icao24)
-    if len(aircraft) < window_size:
-        raise PredictionError(
-            f"Aircraft {icao24} has {len(aircraft)} observations, but model requires {window_size}."
-        )
-
-    latest_window = aircraft.tail(window_size)
-    features = latest_window[feature_columns].to_numpy(dtype=float).reshape(1, window_size, len(feature_columns))
-    scaled_features = _scale_features(features, preprocessors)
-
-    position_scaled = trajectory_model.predict(scaled_features, verbose=0)
-    position = preprocessors["target_scaler"].inverse_transform(position_scaled)[0]
-    on_ground_probability = float(ground_model.predict(scaled_features, verbose=0).reshape(-1)[0])
-    latest = latest_window.iloc[-1].replace({np.nan: None}).to_dict()
-
+    result = predict_with_onnx(request)
     return {
-        "icao24": icao24.lower().strip(),
-        "callsign": _clean_text(latest.get("callsign")) or icao24.lower().strip(),
-        "latest_state": _json_safe_state(latest),
-        "prediction": {
-            "next_latitude": float(position[0]),
-            "next_longitude": float(position[1]),
-            "next_on_ground_probability": on_ground_probability,
-            "next_on_ground": on_ground_probability >= 0.5,
-        },
-        "model": {
-            "trajectory_model": "trajectory_lstm.keras",
-            "on_ground_model": "on_ground_lstm.keras",
-            "window_size": window_size,
-            "feature_columns": feature_columns,
+        **result,
+        "serving": {
+            "pattern": "online_model_as_dependency",
+            "service": "skywatch-api",
+            "runtime": "onnxruntime",
         },
     }
 
 
-def _aircraft_history(history: pd.DataFrame, icao24: str) -> pd.DataFrame:
-    if "icao24" not in history.columns:
-        raise PredictionError("History dataset does not contain icao24.")
-    normalized_id = icao24.lower().strip()
-    aircraft = history[history["icao24"].astype(str).str.lower().str.strip() == normalized_id]
-    aircraft = aircraft.dropna(subset=["last_contact"])
-    aircraft = aircraft.sort_values("last_contact", kind="stable")
-    if aircraft.empty:
-        raise PredictionError(f"Aircraft {icao24} was not found in processed history.")
-    return aircraft
-
-
-def _scale_features(features: np.ndarray, preprocessors: dict[str, Any]) -> np.ndarray:
-    n_samples, window_size, n_features = features.shape
-    flat = features.reshape(-1, n_features)
-    imputed = preprocessors["feature_imputer"].transform(flat)
-    scaled = preprocessors["feature_scaler"].transform(imputed)
-    return scaled.reshape(n_samples, window_size, n_features)
-
-
-def _json_safe_state(state: dict[str, Any]) -> dict[str, Any]:
-    safe: dict[str, Any] = {}
-    for key, value in state.items():
-        if isinstance(value, pd.Timestamp):
-            safe[key] = value.isoformat()
-        elif isinstance(value, np.generic):
-            safe[key] = value.item()
-        elif pd.isna(value):
-            safe[key] = None
-        else:
-            safe[key] = value
-    return safe
-
-
-def _clean_text(value: Any) -> str | None:
-    if value is None or pd.isna(value):
+def load_batch_prediction(icao24: str) -> dict[str, Any] | None:
+    if not BATCH_PREDICTIONS_FILE.exists():
         return None
-    text = str(value).strip()
-    return text or None
+    payload = json.loads(BATCH_PREDICTIONS_FILE.read_text(encoding="utf-8"))
+    return (payload.get("predictions") or {}).get(icao24.lower().strip())
+
+
+def batch_prediction_summary() -> dict[str, Any]:
+    if not BATCH_PREDICTIONS_FILE.exists():
+        return {"status": "missing", "count": 0, "file": str(BATCH_PREDICTIONS_FILE)}
+    payload = json.loads(BATCH_PREDICTIONS_FILE.read_text(encoding="utf-8"))
+    return {
+        "status": "available",
+        "count": payload.get("count", 0),
+        "generated_at_utc": payload.get("generated_at_utc"),
+        "source_snapshot": payload.get("source_snapshot"),
+        "file": str(BATCH_PREDICTIONS_FILE.relative_to(PROJECT_ROOT)),
+    }
+
+
+def _remote_prediction(url: str, request: dict[str, Any]) -> dict[str, Any]:
+    headers = {}
+    token = os.getenv("MODEL_SERVICE_TOKEN")
+    if token:
+        headers["X-Model-Service-Token"] = token
+    response = requests.post(
+        f"{url.rstrip('/')}/v1/predict",
+        json=request,
+        headers=headers,
+        timeout=float(os.getenv("MODEL_SERVICE_TIMEOUT_SECONDS", "20")),
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _model_service_url() -> str | None:
+    explicit = os.getenv("MODEL_SERVICE_URL")
+    if explicit:
+        return explicit
+    host = os.getenv("MODEL_SERVICE_HOST")
+    port = os.getenv("MODEL_SERVICE_PORT")
+    if host and port:
+        return f"http://{host}:{port}"
+    return None
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
@@ -12,14 +13,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from dotenv import load_dotenv
 
-from src.app.prediction import PredictionError, predict_aircraft_state
-from src.app.pretrained_risk import build_flight_risk_text, classify_with_pretrained_model
+from src.app.prediction import (
+    PredictionError,
+    batch_prediction_summary,
+    load_batch_prediction,
+    predict_aircraft_state,
+)
+from src.app.pretrained_risk import (
+    build_flight_risk_text,
+    classify_with_pretrained_model,
+    pretrained_model_status,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env")
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 LEGACY_STATIC_DIR = PROJECT_ROOT / "src" / "app" / "static"
 GX_DOCS_DIR = PROJECT_ROOT / "gx" / "uncommitted" / "data_docs" / "local_site"
+REPORTS_DIR = PROJECT_ROOT / "reports"
 EVIDENTLY_REPORTS_DIR = PROJECT_ROOT / "reports" / "evidently"
 MODEL_REGISTRY_STATE_PATH = PROJECT_ROOT / "reports" / "model_registry" / "model_registry_state.json"
 ALLOWED_MODEL_STAGES = {"Candidate", "Staging", "Production", "Archived"}
@@ -59,6 +72,9 @@ if GX_DOCS_DIR.exists():
 if EVIDENTLY_REPORTS_DIR.exists():
     app.mount("/reports/evidently", StaticFiles(directory=EVIDENTLY_REPORTS_DIR), name="evidently-reports")
 
+if REPORTS_DIR.exists():
+    app.mount("/reports/files", StaticFiles(directory=REPORTS_DIR), name="report-files")
+
 
 @app.get("/", include_in_schema=False)
 def index() -> Response:
@@ -90,8 +106,10 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "skywatch",
+        "online_serving": "model_as_a_service" if _model_service_configured() else "model_as_dependency",
         "latest_processed_snapshot": str(latest_snapshot.relative_to(PROJECT_ROOT)) if latest_snapshot else None,
         "models_available": _models_available(),
+        "batch_predictions": batch_prediction_summary(),
         "frontend_built": (FRONTEND_DIST / "index.html").exists(),
     }
 
@@ -193,6 +211,9 @@ def admin_summary() -> dict[str, Any]:
         "drift": _read_json("reports/evidently/opensky_data_drift_summary.json"),
         "training": _read_json("reports/model_training/opensky_metrics.json"),
         "monitoring": _read_json("reports/model_monitoring/production_model_monitoring.json"),
+        "compression": _read_json("reports/model_compression/opensky_compression.json"),
+        "explainability": _read_json("reports/model_explainability/opensky_explainability.json"),
+        "deployment": _read_json("reports/deployment/model_deployment_patterns.json"),
         "models": _model_inventory(),
         "latest_snapshot": _latest_snapshot_summary(),
     }
@@ -204,24 +225,27 @@ def advanced_admin_summary() -> dict[str, Any]:
     drift = _read_json("reports/evidently/opensky_data_drift_summary.json")
     training = _read_json("reports/model_training/opensky_metrics.json")
     monitoring = _read_json("reports/model_monitoring/production_model_monitoring.json")
+    compression = _read_json("reports/model_compression/opensky_compression.json")
+    explainability = _read_json("reports/model_explainability/opensky_explainability.json")
+    deployment = _read_json("reports/deployment/model_deployment_patterns.json")
     return {
         "quality_gates": [
             _validation_gate(validation),
             _drift_gate(drift),
             _training_gate(training),
+            _compression_gate(compression),
+            _explainability_gate(explainability),
             _monitoring_gate(monitoring),
         ],
         "experiment_tracking": _experiment_tracking_summary(training),
         "model_registry": _model_registry_summary(training),
+        "compression": _compression_summary(compression, training),
+        "explainability": _explainability_summary(explainability),
+        "deployment_patterns": _deployment_patterns_summary(deployment),
         "report_links": _admin_report_links(),
         "lifecycle_stages": sorted(ALLOWED_MODEL_STAGES),
         "shadow_testing": _shadow_testing_summary(training),
-        "pretrained_model": {
-            "model_id": "typeform/distilbert-base-uncased-mnli",
-            "source": "HuggingFace",
-            "task": "zero-shot-classification",
-            "enabled_by_env": "HF_INFERENCE_ENABLED=true",
-        },
+        "pretrained_model": pretrained_model_status(),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -504,7 +528,11 @@ def _drift_gate(drift: dict[str, Any] | None) -> dict[str, Any]:
 
 def _training_gate(training: dict[str, Any] | None) -> dict[str, Any]:
     if not training:
-        return _gate("Model training", "missing", "Training metrics are not available yet.")
+        return _gate(
+            "Model training",
+            "missing",
+            "Training has not generated metrics yet. Run: uv run python main.py train",
+        )
     readiness = _model_confidence(training)
     status = "pass" if readiness["label"] in {"usable", "strong"} else "warn"
     return _gate(
@@ -512,6 +540,48 @@ def _training_gate(training: dict[str, Any] | None) -> dict[str, Any]:
         status,
         f"Readiness is {readiness['label']} with trajectory MAE {readiness['trajectory_mae']:.2f}.",
         readiness,
+    )
+
+
+def _compression_gate(compression: dict[str, Any] | None) -> dict[str, Any]:
+    if not compression:
+        return _gate(
+            "Model compression",
+            "missing",
+            "The float16 quantization report is generated by the model training command.",
+        )
+    summary = compression.get("summary", {}) if isinstance(compression, dict) else {}
+    model_count = summary.get("model_count") or 0
+    reduction = summary.get("best_storage_reduction_vs_keras")
+    message = f"Compression profile available for {model_count} models."
+    if reduction is not None:
+        message += f" Best storage reduction is {float(reduction) * 100:.1f}%."
+    return _gate(
+        "Model compression",
+        "pass" if model_count else "warn",
+        message,
+        summary,
+    )
+
+
+def _explainability_gate(explainability: dict[str, Any] | None) -> dict[str, Any]:
+    if not explainability:
+        return _gate(
+            "Model explainability",
+            "missing",
+            "Feature importance is calculated after a successful model training run.",
+        )
+    feature_count = len(explainability.get("feature_importance", []) or [])
+    status = explainability.get("status", "unknown")
+    return _gate(
+        "Model explainability",
+        "pass" if status == "available" and feature_count else "warn",
+        f"{feature_count} features explained with {explainability.get('method', 'unknown method')}.",
+        {
+            "method": explainability.get("method"),
+            "sample_size": explainability.get("sample_size"),
+            "feature_count": feature_count,
+        },
     )
 
 
@@ -536,6 +606,94 @@ def _shadow_testing_summary(training: dict[str, Any] | None) -> dict[str, Any]:
         "message": "Each live prediction returns distance between the trained model and the heuristic shadow baseline.",
         "training_mae_latitude": mae_latitude,
         "training_mae_longitude": mae_longitude,
+    }
+
+
+@app.get("/api/batch-predictions")
+def batch_predictions() -> dict[str, Any]:
+    return batch_prediction_summary()
+
+
+@app.get("/api/batch-predictions/{icao24}")
+def aircraft_batch_prediction(icao24: str) -> dict[str, Any]:
+    prediction = load_batch_prediction(icao24)
+    if prediction is None:
+        raise HTTPException(status_code=404, detail=f"No batch prediction found for aircraft {icao24}.")
+    return prediction
+
+
+def _compression_summary(
+    compression: dict[str, Any] | None,
+    training: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not compression:
+        return {
+            "status": "missing",
+            "message": "Compression report has not been generated yet.",
+            "models": [],
+        }
+
+    training_onnx = (training or {}).get("onnx", {}) if isinstance(training, dict) else {}
+    return {
+        "status": compression.get("status", "available"),
+        "purpose": compression.get("purpose"),
+        "summary": compression.get("summary", {}),
+        "onnx": training_onnx,
+        "models": compression.get("models", []),
+    }
+
+
+def _explainability_summary(explainability: dict[str, Any] | None) -> dict[str, Any]:
+    if not explainability:
+        return {
+            "status": "missing",
+            "method": "permutation_feature_importance",
+            "message": "Explainability report has not been generated yet.",
+            "top_trajectory_features": [],
+            "top_on_ground_features": [],
+        }
+    return {
+        "status": explainability.get("status"),
+        "method": explainability.get("method"),
+        "method_note": explainability.get("method_note"),
+        "sample_size": explainability.get("sample_size"),
+        "baseline": explainability.get("baseline", {}),
+        "top_trajectory_features": explainability.get("top_trajectory_features", []),
+        "top_on_ground_features": explainability.get("top_on_ground_features", []),
+    }
+
+
+def _deployment_patterns_summary(deployment: dict[str, Any] | None) -> dict[str, Any]:
+    if not deployment:
+        return {
+            "status": "fallback",
+            "active_pattern": "hybrid_online_and_batch_inference",
+            "patterns": [
+                {
+                    "key": "online_model_as_a_service",
+                    "name": "Online model as a service",
+                    "status": "ready",
+                    "description": "A private ONNX service performs online inference for the public API.",
+                },
+                {
+                    "key": "batch_offline_prediction",
+                    "name": "Batch/offline prediction",
+                    "status": batch_prediction_summary().get("status", "missing"),
+                    "description": "DVC prepares predictions that remain available if online inference is unavailable.",
+                },
+                {
+                    "key": "online_model_as_dependency",
+                    "name": "Embedded ONNX fallback",
+                    "status": "ready" if _models_available() else "missing",
+                    "description": "FastAPI can execute local ONNX artifacts as a fallback.",
+                },
+            ],
+        }
+    return {
+        "status": deployment.get("status"),
+        "active_pattern": deployment.get("active_pattern"),
+        "patterns": deployment.get("patterns", []),
+        "serving_contract": deployment.get("serving_contract", {}),
     }
 
 
@@ -631,21 +789,40 @@ def _read_model_registry_state() -> dict[str, Any]:
 
 def _admin_report_links() -> list[dict[str, Any]]:
     return [
-        _report_link("Great Expectations Data Docs", GX_DOCS_DIR / "index.html", "/reports/gx-site/index.html"),
         _report_link(
-            "Evidently drift report",
+            "Great Expectations validation report",
+            GX_DOCS_DIR / "index.html",
+            "/reports/gx-site/index.html",
+        ),
+        _report_link(
+            "Evidently data drift report",
             PROJECT_ROOT / "reports" / "evidently" / "opensky_data_drift_report.html",
             "/reports/evidently/opensky_data_drift_report.html",
         ),
         _report_link(
             "Validation JSON",
             PROJECT_ROOT / "reports" / "validation" / "opensky_validation.json",
-            None,
+            "/reports/files/validation/opensky_validation.json",
         ),
         _report_link(
             "Model monitoring JSON",
             PROJECT_ROOT / "reports" / "model_monitoring" / "production_model_monitoring.json",
-            None,
+            "/reports/files/model_monitoring/production_model_monitoring.json",
+        ),
+        _report_link(
+            "Model compression JSON",
+            PROJECT_ROOT / "reports" / "model_compression" / "opensky_compression.json",
+            "/reports/files/model_compression/opensky_compression.json",
+        ),
+        _report_link(
+            "Model explainability JSON",
+            PROJECT_ROOT / "reports" / "model_explainability" / "opensky_explainability.json",
+            "/reports/files/model_explainability/opensky_explainability.json",
+        ),
+        _report_link(
+            "Deployment patterns JSON",
+            PROJECT_ROOT / "reports" / "deployment" / "model_deployment_patterns.json",
+            "/reports/files/deployment/model_deployment_patterns.json",
         ),
     ]
 
@@ -726,6 +903,13 @@ def _models_available() -> bool:
         PROJECT_ROOT / "models" / "opensky" / "preprocessors.pkl",
     ]
     return all(path.exists() for path in expected)
+
+
+def _model_service_configured() -> bool:
+    return bool(
+        os.getenv("MODEL_SERVICE_URL")
+        or (os.getenv("MODEL_SERVICE_HOST") and os.getenv("MODEL_SERVICE_PORT"))
+    )
 
 
 def _clean_text(value: Any) -> str | None:

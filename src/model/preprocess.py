@@ -53,6 +53,7 @@ def build_sequence_dataset(
     feature_columns: list[str],
     window_size: int,
     max_sequences: int | None = None,
+    max_sequence_gap_seconds: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     if window_size < 1:
         raise ValueError("window_size must be at least 1.")
@@ -85,6 +86,11 @@ def build_sequence_dataset(
 
         for index in range(len(group) - window_size):
             target_index = index + window_size
+            if max_sequence_gap_seconds is not None:
+                sequence_times = time_values[index : target_index + 1]
+                gaps = np.diff(sequence_times)
+                if np.any(gaps < 0) or np.any(gaps > max_sequence_gap_seconds):
+                    continue
             sequences.append(feature_values[index:target_index])
             position_targets.append(position_values[target_index])
             ground_targets.append(ground_values[target_index])
