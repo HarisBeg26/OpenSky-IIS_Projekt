@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: docker/model-service.Dockerfile
     environment:
-      MODEL_SERVICE_TOKEN: local-skywatch-token
+      MODEL_SERVICE_TOKEN: ${MODEL_SERVICE_TOKEN:-local-skywatch-token}
       PORT: "8001"
     ports:
       - "8001:8001"
@@ -24,11 +24,23 @@ services:
       dockerfile: Dockerfile
     environment:
       MODEL_SERVICE_URL: http://model-service:8001
-      MODEL_SERVICE_TOKEN: local-skywatch-token
+      MODEL_SERVICE_TOKEN: ${MODEL_SERVICE_TOKEN:-local-skywatch-token}
       ALLOW_LOCAL_MODEL_FALLBACK: "false"
+      HF_INFERENCE_ENABLED: ${HF_INFERENCE_ENABLED:-true}
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_MODEL_ID: ${HF_MODEL_ID:-facebook/bart-large-mnli}
       PORT: "8000"
     ports:
       - "8000:8000"
     depends_on:
       model-service:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"
+      interval: 10s
+      timeout: 5s
+      retries: 5

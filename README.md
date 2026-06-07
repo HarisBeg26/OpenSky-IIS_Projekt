@@ -5,6 +5,39 @@ Ta projekt uporablja podatkovni cevovod z DVC za zajem, predobdelavo, validacijo
 - Great Expectations za validacijo oblike in pravilnosti obdelanih podatkov.
 - Evidently za zaznavanje sprememb v porazdelitvi podatkov med referencnim in trenutnim OpenSky snapshotom.
 
+## Hitra lokalna vzpostavitev
+
+Projekt vsebuje vse skripte, konfiguracije in zaklepne datoteke za vzpostavitev
+iz sveze kopije repozitorija. Potrebni veliki podatki, modeli in porocila so
+verzionirani z DVC in se prenesejo iz zasebnega DagsHub remote-a.
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+.\scripts\setup-local.ps1
+.\scripts\run-local.ps1
+```
+
+Linux ali macOS:
+
+```bash
+cp .env.example .env
+bash scripts/setup-local.sh
+bash scripts/run-local.sh
+```
+
+Po zagonu je aplikacija na <http://127.0.0.1:8000>, API dokumentacija pa na
+<http://127.0.0.1:8000/docs>.
+
+Za prvi `dvc pull` sta v `.env` potrebna `DAGSHUB_ACCESS_KEY_ID` in
+`DAGSHUB_SECRET_ACCESS_KEY`. Za zunanji HuggingFace model je potreben
+`HF_TOKEN`. Nobena skrivnost ni shranjena v Git.
+
+Celotna navodila, Docker Compose pot, preverjanje namestitve in odpravljanje
+tezav so v [LOCAL_SETUP.md](LOCAL_SETUP.md).
+
 ## Pricakovani rezultat
 
 Razvit je ponovljiv cevovod, ki:
@@ -182,7 +215,7 @@ Vizualno je tok naslednji:
 
 Great Expectations uporabljamo za strukturirano validacijo obdelane zgodovine letov `states_history.csv`. Preverjamo shemo podatkov, prisotnost kljucnih stolpcev, osnovne obsege vrednosti in konzistentnost casovnih ter identifikacijskih polj.
 
-Skripta [gx/run_checkpoint.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/gx/run_checkpoint.py:1):
+Skripta [gx/run_checkpoint.py](gx/run_checkpoint.py):
 
 - inicializira ali ponovno uporabi Filesystem Data Context v mapi `gx`,
 - konfigurira Pandas filesystem datasource za obdelano zgodovino letov,
@@ -209,7 +242,7 @@ Ker so posamezni OpenSky snapshoti v izbranem `bbox` obmocju lahko zelo majhni, 
 
 Uporabljamo prag `test_data.drift_share: 0.7`, kar pomeni, da se dataset drift obravnava kot kriticen sele, ko drift zaznamo pri vec kot 70 % primerjanih stolpcev. To sledi tudi Evidently dokumentaciji, kjer je privzeti dataset-level drift prag 50 %, vendar ga lahko za konkreten primer prilagodimo.
 
-Skripta [test_opensky_data.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/src/data/test_opensky_data.py:1) izvede:
+Skripta [test_opensky_data.py](src/data/test_opensky_data.py) izvede:
 
 - nalaganje trenutnega in referencnega snapshota,
 - uskladitev skupnih stolpcev za primerjavo,
@@ -274,7 +307,7 @@ Za OpenSky imamo dve razlicni napovedni nalogi, obe izvedeni z rekurentnimi nevr
 - `trajectory_lstm` uporablja LSTM regresijski model in napoveduje naslednjo pozicijo letala, torej `target_next_latitude` in `target_next_longitude`.
 - `on_ground_lstm` uporablja LSTM klasifikacijski model in napoveduje, ali bo letalo v naslednjem stanju na tleh (`target_next_on_ground`).
 
-Obe nalogi uporabljata zgodovinske OpenSky zapise, zdruzene po `icao24` in urejene po casu. Skripta [train.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/src/model/train.py:1) iz posameznih letal ustvari drseca zaporedja oblike "zadnjih N stanj -> naslednje stanje", nato izvede casovni train/test razcep. Modela sta shranjena kot `.keras` in `.onnx` datoteki v `models/opensky`, predprocesorji pa v `models/opensky/preprocessors.pkl`. Metrike so zapisane v `reports/model_training/opensky_metrics.json`.
+Obe nalogi uporabljata zgodovinske OpenSky zapise, zdruzene po `icao24` in urejene po casu. Skripta [train.py](src/model/train.py) iz posameznih letal ustvari drseca zaporedja oblike "zadnjih N stanj -> naslednje stanje", nato izvede casovni train/test razcep. Modela sta shranjena kot `.keras` in `.onnx` datoteki v `models/opensky`, predprocesorji pa v `models/opensky/preprocessors.pkl`. Metrike so zapisane v `reports/model_training/opensky_metrics.json`.
 
 `train` faza je definirana tako:
 
@@ -332,7 +365,7 @@ Nato odpri `http://127.0.0.1:5000`.
 
 ## Produkcijsko nadzorovanje modelov
 
-Skripta [monitor_models.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/src/monitoring/monitor_models.py:1) pripravi porocilo `reports/model_monitoring/production_model_monitoring.json`. V njem preverimo:
+Skripta [monitor_models.py](src/monitoring/monitor_models.py) pripravi porocilo `reports/model_monitoring/production_model_monitoring.json`. V njem preverimo:
 
 - ali so prisotni pricakovani produkcijski artefakti modelov,
 - ali so metrike modelov znotraj pragov,
@@ -347,7 +380,7 @@ uv run python main.py monitor
 
 ## Uporabniski in administratorski vmesnik
 
-Uporabniski vmesnik je locena React aplikacija v `frontend/`, FastAPI pa ostane inteligentni API servis v [src/app/main.py](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/src/app/main.py:1).
+Uporabniski vmesnik je locena React aplikacija v `frontend/`, FastAPI pa ostane inteligentni API servis v [src/app/main.py](src/app/main.py).
 
 FastAPI ponuja:
 
@@ -453,7 +486,7 @@ Po tem:
 
 Zajem OpenSky podatkov uporablja vec ponovnih poskusov in svezi DVC fallback. Fallback na obstojec raw snapshot je dovoljen samo, ce je snapshot mlajsi od `fetch.max_cached_age_hours`; s tem pipeline ne nadaljuje tiho na prestarih podatkih.
 
-Aktualni workflow je v [fetch_data.yml](C:/Users/vunja/Desktop/Haris/Faks/Master/1.%20letnik/2.%20semester/IIS/Vaje/Projekt/OpenSky-IIS_Projekt/.github/workflows/fetch_data.yml:1).
+Aktualni workflow je v [fetch_data.yml](.github/workflows/fetch_data.yml).
 
 ## Zagon
 
@@ -478,12 +511,12 @@ uv run python main.py train
 Ali pa pozenes celoten cevovod:
 
 ```bash
-dvc repro
+uv run dvc repro
 ```
 
 Po uspesni izvedbi lahko rezultate delis z:
 
 ```bash
 git push
-dvc push
+uv run dvc push
 ```

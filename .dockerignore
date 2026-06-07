@@ -10,8 +10,11 @@ frontend/dist
 __pycache__
 *.pyc
 .dvc/cache
+.dvc/config.local
+.dvc/tmp
 data/raw
 data/reference
 gx/uncommitted/validations
+mlruns
 notebooks
 tests
