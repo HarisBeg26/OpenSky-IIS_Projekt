@@ -652,14 +652,67 @@ def _explainability_summary(explainability: dict[str, Any] | None) -> dict[str, 
             "top_trajectory_features": [],
             "top_on_ground_features": [],
         }
+    baseline = explainability.get("baseline", {})
     return {
         "status": explainability.get("status"),
         "method": explainability.get("method"),
-        "method_note": explainability.get("method_note"),
+        "method_note": (
+            "Global permutation feature importance, not SHAP: each feature is shuffled across "
+            "test examples and the resulting degradation in performance is measured."
+        ),
         "sample_size": explainability.get("sample_size"),
-        "baseline": explainability.get("baseline", {}),
+        "repeats": explainability.get("repeats"),
+        "baseline": baseline,
+        "interpretation": explainability.get("interpretation") or _legacy_explainability_interpretation(
+            explainability,
+            baseline,
+        ),
         "top_trajectory_features": explainability.get("top_trajectory_features", []),
         "top_on_ground_features": explainability.get("top_on_ground_features", []),
+    }
+
+
+def _legacy_explainability_interpretation(
+    explainability: dict[str, Any],
+    baseline: dict[str, Any],
+) -> dict[str, Any]:
+    base_distance = float(baseline.get("trajectory_mae_distance_m", 0) or 0)
+    base_ground_f1 = float(baseline.get("on_ground_f1", 0) or 0)
+    repeats = int(explainability.get("repeats", 0) or 0)
+    coordinate_multiple = max(
+        (
+            float(row.get("trajectory_distance_increase_m", 0) or 0) / max(base_distance, 1)
+            for row in explainability.get("feature_importance", [])
+            if row.get("feature") in {"latitude", "longitude"}
+        ),
+        default=0,
+    )
+    warnings = []
+    if coordinate_multiple >= 5:
+        warnings.append(
+            "Very strong coordinate dependence can indicate geographic memorization; validate on unseen aircraft or regions."
+        )
+    if base_ground_f1 < 0.5:
+        warnings.append(
+            "Baseline on-ground F1 is below 0.50, so this ranking is fragile."
+        )
+    if repeats < 3:
+        warnings.append(
+            "Fewer than three permutation repeats were used; values may be unstable."
+        )
+    return {
+        "quality": "caution" if warnings else "stable",
+        "headline": "This chart measures model reliance, not whether a feature is good or bad.",
+        "scope": "global test-set explanation",
+        "higher_means": "Shuffling the feature damaged test performance more, so the model relied on it more.",
+        "near_zero_means": "The feature had little measurable influence on this test sample.",
+        "negative_means": "Shuffling improved performance, which can indicate noise or sampling variation.",
+        "not_causality": "This is permutation importance, not SHAP or a causal explanation.",
+        "bar_scale": "Bars show relative ranking within each task, not an accuracy score.",
+        "baseline_trajectory_mae_distance_m": base_distance,
+        "baseline_on_ground_f1": base_ground_f1,
+        "coordinate_reliance_multiple": coordinate_multiple,
+        "warnings": warnings,
     }
 
 

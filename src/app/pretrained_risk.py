@@ -24,13 +24,13 @@ def classify_with_pretrained_model(text: str, labels: list[str] | None = None) -
     model_id = os.getenv("HF_MODEL_ID", DEFAULT_PRETRAINED_MODEL_ID)
     model_url = f"https://huggingface.co/{model_id}"
     inference_url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
-    if os.getenv("HF_INFERENCE_ENABLED", "").strip().lower() not in {"1", "true", "yes", "on"}:
+    if not _inference_enabled():
         return {
             "status": "disabled",
             "model_id": model_id,
             "model_url": model_url,
             "task": "zero-shot-classification",
-            "message": "Optional external model is disabled. Enable it in .env when needed.",
+            "message": "External model was explicitly disabled with HF_INFERENCE_ENABLED=false.",
             "candidate_labels": labels,
         }
 
@@ -83,7 +83,7 @@ def classify_with_pretrained_model(text: str, labels: list[str] | None = None) -
 
 def pretrained_model_status() -> dict[str, Any]:
     model_id = os.getenv("HF_MODEL_ID", DEFAULT_PRETRAINED_MODEL_ID)
-    enabled = os.getenv("HF_INFERENCE_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+    enabled = _inference_enabled()
     token_configured = bool(
         os.getenv("HF_TOKEN")
         or os.getenv("HF_API_TOKEN")
@@ -98,6 +98,10 @@ def pretrained_model_status() -> dict[str, Any]:
         "token_configured": token_configured,
         "status": "ready" if enabled and token_configured else "disabled" if not enabled else "configuration_required",
     }
+
+
+def _inference_enabled() -> bool:
+    return os.getenv("HF_INFERENCE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _normalize_predictions(payload: Any) -> list[dict[str, Any]]:

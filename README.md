@@ -360,7 +360,7 @@ FastAPI ponuja:
 
 React UI prikaze inteligentno izkusnjo: uporabnik izbere zrakoplov, vidi razloge za opozorilo, priporocen ukrep, heuristicno projekcijo ter napoved iz naucenih modelov. Uporabnik lahko prilagodi prag nizke visine, hitrosti spuscanja, visoke hitrosti in minimalnega attention score; nastavitve se shranijo lokalno v brskalniku in takoj vplivajo na prioritetno vrsto.
 
-Poleg dveh lastno naucenih nevronskih mrez projekt vkljucuje tudi opcijsko integracijo z obstojecim naucenim modelom `facebook/bart-large-mnli` iz HuggingFace za zero-shot klasifikacijo tekstovnega opisa tveganja leta. Ustvari lokalno datoteko `.env` po vzoru `.env.example`, nastavi `HF_INFERENCE_ENABLED=true` in dodaj `HF_TOKEN` z dovoljenjem Inference Providers. Brez teh nastavitev osnovna aplikacija normalno deluje, kartica pa model oznaci kot opcijsko izklopljen.
+Poleg dveh lastno naucenih nevronskih mrez projekt vkljucuje tudi obstojeci nauceni model `facebook/bart-large-mnli` iz HuggingFace za zero-shot klasifikacijo tekstovnega opisa tveganja leta. Integracija je privzeto vklopljena. Lokalno ustvari datoteko `.env` po vzoru `.env.example` in dodaj `HF_TOKEN` z dovoljenjem Inference Providers; pri Render Blueprint namestitvi se `HF_TOKEN` vnese kot skrivnost. Token se nikoli ne shrani v Git. Ce token manjka, osnovna aplikacija se vedno deluje, administratorska kartica pa jasno prikaze stanje `configuration_required`.
 
 Razsirjena administratorska plosca zdruzuje:
 
@@ -369,7 +369,10 @@ Razsirjena administratorska plosca zdruzuje:
 - MLflow experiment tracking in podatke o registriranih modelih,
 - lokalni lifecycle nadzor modelov za prikaz migracije med fazami,
 - shadow testing primerjavo med LSTM trajektorijo in kinematicnim baseline modelom,
+- globalno permutacijsko pomembnost znacilk z baseline metrikami in opozorili za varno interpretacijo,
 - povezave do HTML/JSON porocil, kadar so artefakti prisotni po `dvc pull`.
+
+Prikaz razlagalnosti ni SHAP in ne prikazuje vzrocnosti ali smeri vpliva. Vsaka znacilka se premesa cez testne primere, nato pa se izmeri poslabsanje rezultata. Daljsi stolpec zato pomeni vecjo odvisnost modela od znacilke, ne pa boljse znacilke ali boljsega modela. Posebej mocna odvisnost trajektorije od `latitude` ali `longitude` je opozorilo za mozno geografsko pomnjenje in zahteva preverjanje na nevidenih zrakoplovih oziroma regijah.
 
 Lokalni backend:
 
@@ -423,8 +426,9 @@ Datoteka `render.yaml` definira en brezplacni spletni servis `skywatch-api` v re
 1. V GitHub nastavitvah ustvari Personal Access Token z dovoljenjem `read:packages`.
 2. V Render `Workspace Settings > Container Registry Credentials` dodaj GHCR poverilnico z imenom `github-container-registry`.
 3. V Render izberi `New > Blueprint`, povezi repozitorij in uporabi korensko datoteko `render.yaml`.
-4. V servisu `skywatch-api` kopiraj Deploy Hook URL.
-5. V GitHub Actions secrets dodaj samo `RENDER_API_DEPLOY_HOOK_URL`.
+4. Ob ustvarjanju servisa vnesi skrivnost `HF_TOKEN`.
+5. V servisu `skywatch-api` kopiraj Deploy Hook URL.
+6. V GitHub Actions secrets dodaj samo `RENDER_API_DEPLOY_HOOK_URL`.
 
 GitHub Actions workflow `.github/workflows/docker.yml` po uspesnem podatkovnem cevovodu:
 

@@ -14,4 +14,6 @@ services:
       - key: ALLOW_LOCAL_MODEL_FALLBACK
         value: "true"
       - key: HF_INFERENCE_ENABLED
-        value: "false"
+        value: "true"
+      - key: HF_TOKEN
+        sync: false

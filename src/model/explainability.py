@@ -81,12 +81,18 @@ def build_explainability_report(
             ground_f1_drops.append(float(base_ground_f1 - permuted_ground_f1))
 
         trajectory_increase = float(np.mean(trajectory_increases))
+        trajectory_std = float(np.std(trajectory_increases))
         ground_f1_drop = float(np.mean(ground_f1_drops))
+        ground_f1_std = float(np.std(ground_f1_drops))
         rows.append(
             {
                 "feature": feature_name,
                 "trajectory_distance_increase_m": trajectory_increase,
+                "trajectory_distance_increase_std_m": trajectory_std,
+                "trajectory_relative_error_increase": float(trajectory_increase / max(base_distance_m, 1)),
                 "on_ground_f1_drop": ground_f1_drop,
+                "on_ground_f1_drop_std": ground_f1_std,
+                "on_ground_relative_f1_drop": float(ground_f1_drop / max(base_ground_f1, 1e-9)),
                 "combined_importance": float(max(0, trajectory_increase / max(base_distance_m, 1)) + max(0, ground_f1_drop)),
             }
         )
@@ -99,8 +105,15 @@ def build_explainability_report(
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "method": "permutation_feature_importance",
         "method_note": (
-            "ELI5/SHAP-style global explanation: each feature is shuffled and the degradation "
-            "in trajectory distance error and on-ground F1 is measured."
+            "Global permutation feature importance, not SHAP: each feature is shuffled across "
+            "test examples and the resulting degradation in model performance is measured."
+        ),
+        "interpretation": _build_interpretation(
+            rows,
+            base_distance_m,
+            base_ground_f1,
+            int(len(X_sample)),
+            repeats,
         ),
         "sample_size": int(len(X_sample)),
         "repeats": repeats,
@@ -112,6 +125,57 @@ def build_explainability_report(
         "feature_importance": rows,
         "top_trajectory_features": by_trajectory[:top_n],
         "top_on_ground_features": by_ground[:top_n],
+    }
+
+
+def _build_interpretation(
+    rows: list[dict],
+    base_distance_m: float,
+    base_ground_f1: float,
+    sample_size: int,
+    repeats: int,
+) -> dict:
+    warnings = []
+    coordinate_rows = [row for row in rows if row["feature"] in {"latitude", "longitude"}]
+    coordinate_reliance = max(
+        (row["trajectory_relative_error_increase"] for row in coordinate_rows),
+        default=0,
+    )
+    if coordinate_reliance >= 5:
+        warnings.append(
+            "Trajectory error rises by more than 5x the baseline when a coordinate is shuffled. "
+            "This indicates strong geographic dependence and should be validated on unseen aircraft or regions."
+        )
+    if base_ground_f1 < 0.5:
+        warnings.append(
+            "The baseline on-ground F1 is below 0.50, so its feature ranking is fragile and must not be read as a causal explanation."
+        )
+    if repeats < 3:
+        warnings.append(
+            "Fewer than three permutation repeats were used, so importance values may be unstable."
+        )
+    if sample_size < 200:
+        warnings.append(
+            "The explanation sample contains fewer than 200 sequences."
+        )
+
+    return {
+        "quality": "caution" if warnings else "stable",
+        "headline": (
+            "Interpret with caution: the ranking exposes model reliance, not whether a feature is good or bad."
+            if warnings
+            else "The ranking is suitable as a global model-reliance summary."
+        ),
+        "scope": "global test-set explanation",
+        "higher_means": "Shuffling the feature damaged test performance more, so the model relied on it more.",
+        "near_zero_means": "The feature had little measurable influence on this test sample.",
+        "negative_means": "Shuffling improved performance, which can indicate noise, redundancy, or sampling variation.",
+        "not_causality": "Importance does not show causal influence, prediction direction, or feature quality.",
+        "bar_scale": "Bars are normalized within each task and show relative ranking, not an accuracy score.",
+        "baseline_trajectory_mae_distance_m": float(base_distance_m),
+        "baseline_on_ground_f1": float(base_ground_f1),
+        "coordinate_reliance_multiple": float(coordinate_reliance),
+        "warnings": warnings,
     }
 
 

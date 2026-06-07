@@ -274,7 +274,10 @@ function buildAdvancedFallback(admin) {
     pretrained_model: {
       model_id: "facebook/bart-large-mnli",
       source: "HuggingFace Inference Providers",
-      task: "zero-shot-classification"
+      task: "zero-shot-classification",
+      enabled: true,
+      token_configured: false,
+      status: "configuration_required"
     },
     compression: admin.compression || {
       status: "missing",
@@ -284,6 +287,13 @@ function buildAdvancedFallback(admin) {
     explainability: admin.explainability || {
       status: "missing",
       method: "permutation_feature_importance",
+      interpretation: {
+        quality: "caution",
+        headline: "This chart measures model reliance, not whether a feature is good or bad.",
+        not_causality: "Permutation importance is not SHAP and does not establish causality.",
+        bar_scale: "Bars show relative ranking within each task, not an accuracy score.",
+        warnings: []
+      },
       top_trajectory_features: [],
       top_on_ground_features: []
     },
@@ -588,12 +598,32 @@ function AdvancedAdmin({ advanced, selectedAircraft, prediction, predictionState
         </article>
       </div>
       <div className="admin-deep-grid secondary">
-        <article className="deep-card">
+        <article className="deep-card pretrained-card">
           <h3><Brain /> Pretrained external model</h3>
+          <div className={`pretrained-status ${advanced.pretrained_model?.status || "configuration_required"}`}>
+            <span className={`mini-status ${advanced.pretrained_model?.status || "configuration_required"}`}>
+              {advanced.pretrained_model?.status || "configuration required"}
+            </span>
+            <p>
+              {advanced.pretrained_model?.status === "ready"
+                ? "Enabled by default and ready for live zero-shot risk classification."
+                : advanced.pretrained_model?.status === "disabled"
+                  ? "Explicitly disabled with HF_INFERENCE_ENABLED=false."
+                  : "Enabled by default. Add HF_TOKEN as a local or Render secret to activate inference."}
+            </p>
+          </div>
           <dl>
             <div>
               <dt>Model</dt>
-              <dd>{advanced.pretrained_model?.model_id || "facebook/bart-large-mnli"}</dd>
+              <dd>
+                {advanced.pretrained_model?.model_url ? (
+                  <a href={advanced.pretrained_model.model_url} target="_blank" rel="noreferrer">
+                    {advanced.pretrained_model?.model_id || "facebook/bart-large-mnli"}
+                  </a>
+                ) : (
+                  advanced.pretrained_model?.model_id || "facebook/bart-large-mnli"
+                )}
+              </dd>
             </div>
             <div>
               <dt>Source</dt>
@@ -688,43 +718,104 @@ function CompressionCard({ compression }) {
 function ExplainabilityCard({ explainability }) {
   const trajectory = explainability?.top_trajectory_features || [];
   const onGround = explainability?.top_on_ground_features || [];
+  const interpretation = explainability?.interpretation || {};
+  const baseline = explainability?.baseline || {};
+  const baselineDistance = Number(
+    baseline.trajectory_mae_distance_m
+      ?? interpretation.baseline_trajectory_mae_distance_m
+  );
+  const baselineGroundF1 = Number(
+    baseline.on_ground_f1
+      ?? interpretation.baseline_on_ground_f1
+  );
+  const warnings = interpretation.warnings || [];
+  const quality = interpretation.quality || "caution";
   return (
-    <article className="deep-card feature-card">
-      <h3><Brain /> Model explainability</h3>
-      <p className="deep-note">
-        {explainability?.method_note || `Method: ${explainability?.method || "permutation_feature_importance"}`}
+    <article className="deep-card feature-card explainability-card">
+      <div className="explainability-heading">
+        <div>
+          <h3><Brain /> Global model reliance</h3>
+          <p className="deep-note">
+            Permutation feature importance over the held-out test sample. This is not SHAP.
+          </p>
+        </div>
+        <span className={`mini-status ${quality}`}>{quality}</span>
+      </div>
+      <div className={`explainability-verdict ${quality}`}>
+        <strong>{interpretation.headline || "Interpret these values as model reliance, not feature quality."}</strong>
+        <p>
+          A larger positive value means that shuffling one feature damaged performance more.
+          It does not mean the feature is good, bad, causal, or pushes a prediction up or down.
+        </p>
+      </div>
+      <div className="explainability-baselines">
+        <Metric label="Baseline trajectory error" value={formatDistance(baselineDistance)} />
+        <Metric label="Baseline on-ground F1" value={formatPercent(baselineGroundF1)} />
+        <Metric
+          label="Explanation sample"
+          value={`${format(explainability?.sample_size)} sequences / ${format(explainability?.repeats)} repeats`}
+        />
+      </div>
+      {warnings.length > 0 && (
+        <div className="explainability-warnings">
+          <strong>What needs attention</strong>
+          <ul>
+            {warnings.map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
+        </div>
+      )}
+      <div className="explainability-grid">
+        <FeatureBars
+          title="Trajectory reliance"
+          description="Increase in mean geographic error after shuffling the feature."
+          features={trajectory}
+          valueKey="trajectory_distance_increase_m"
+          formatter={formatDistance}
+          detailFormatter={(feature, value) => {
+            const relative = Number(feature.trajectory_relative_error_increase);
+            const ratio = Number.isFinite(relative)
+              ? relative
+              : value / Math.max(baselineDistance || 0, 1);
+            return `${number.format(ratio)}x baseline error`;
+          }}
+        />
+        <FeatureBars
+          title="On-ground reliance"
+          description="Absolute F1-score drop after shuffling the feature."
+          features={onGround}
+          valueKey="on_ground_f1_drop"
+          formatter={formatPercentagePoints}
+        />
+      </div>
+      <p className="feature-scale-note">
+        Bar lengths are normalized separately inside each task. Compare feature rank within a task,
+        not bar length between trajectory and on-ground predictions.
       </p>
-      <FeatureBars
-        title="Trajectory drivers"
-        features={trajectory}
-        valueKey="trajectory_distance_increase_m"
-        formatter={formatDistance}
-      />
-      <FeatureBars
-        title="On-ground drivers"
-        features={onGround}
-        valueKey="on_ground_f1_drop"
-        formatter={formatPercent}
-      />
     </article>
   );
 }
 
-function FeatureBars({ title, features, valueKey, formatter }) {
+function FeatureBars({ title, description, features, valueKey, formatter, detailFormatter }) {
   const maxValue = Math.max(...features.map((feature) => Math.max(0, Number(feature[valueKey]) || 0)), 1);
   return (
     <div className="feature-bars">
       <span>{title}</span>
+      <p>{description}</p>
       {features.slice(0, 5).map((feature) => {
         const value = Number(feature[valueKey]) || 0;
-        const width = `${Math.max(8, Math.min(100, (Math.max(0, value) / maxValue) * 100))}%`;
+        const positiveWidth = Math.min(100, (Math.max(0, value) / maxValue) * 100);
+        const width = `${value > 0 ? Math.max(2, positiveWidth) : 2}%`;
+        const detail = detailFormatter?.(feature, value);
         return (
           <div className="feature-bar" key={`${title}-${feature.feature}`}>
             <div>
               <strong>{feature.feature}</strong>
-              <small>{formatter(value)}</small>
+              <small>
+                {formatter(value)}
+                {detail && <em>{detail}</em>}
+              </small>
             </div>
-            <i style={{ width }} />
+            <i className={value < 0 ? "negative" : ""} style={{ width }} />
           </div>
         );
       })}
@@ -899,6 +990,11 @@ function pretrainedModelLabel(model) {
 function formatPercent(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "n/a";
   return `${number.format(Number(value) * 100)}%`;
+}
+
+function formatPercentagePoints(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "n/a";
+  return `${number.format(Number(value) * 100)} pp`;
 }
 
 function formatDistance(value) {

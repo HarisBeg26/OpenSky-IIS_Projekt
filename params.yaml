@@ -71,7 +71,7 @@ train:
   quantization_dtype: "float16"
   explainability_enabled: true
   explainability_sample_size: 1000
-  explainability_repeats: 1
+  explainability_repeats: 5
   explainability_top_n: 10
   test_size: 0.2
   max_sequences: 12000
