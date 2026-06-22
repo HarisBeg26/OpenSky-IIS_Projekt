@@ -32,17 +32,17 @@ stages:
     outs:
     - path: data/raw
       hash: md5
-      md5: ceb5ad6e199d9a6861b3b6ca0fb477c6.dir
-      size: 34900763
-      nfiles: 59
+      md5: cbb449b327d9899c539f0c46adc1b826.dir
+      size: 34915273
+      nfiles: 60
   preprocess:
     cmd: uv run python main.py preprocess
     deps:
     - path: data/raw
       hash: md5
-      md5: ceb5ad6e199d9a6861b3b6ca0fb477c6.dir
-      size: 34900763
-      nfiles: 59
+      md5: cbb449b327d9899c539f0c46adc1b826.dir
+      size: 34915273
+      nfiles: 60
     - path: main.py
       hash: md5
       md5: cba5953349ab3ff01b7d0585dfc8532e
@@ -64,17 +64,17 @@ stages:
     outs:
     - path: data/processed
       hash: md5
-      md5: b02532709a493396359de03d7663d0b6.dir
-      size: 54641008
-      nfiles: 60
+      md5: 603103ac26a95c23e02ca9fc85bae554.dir
+      size: 54664494
+      nfiles: 61
   validate:
     cmd: uv run python gx/run_checkpoint.py
     deps:
     - path: data/processed
       hash: md5
-      md5: b02532709a493396359de03d7663d0b6.dir
-      size: 54641008
-      nfiles: 60
+      md5: 603103ac26a95c23e02ca9fc85bae554.dir
+      size: 54664494
+      nfiles: 61
     - path: gx/run_checkpoint.py
       hash: md5
       md5: a297ed2664d59465c91106086e0cfcbb
@@ -101,9 +101,9 @@ stages:
     outs:
     - path: gx/uncommitted
       hash: md5
-      md5: 381de432e941f6b057c153c415ec8a80.dir
-      size: 8595768
-      nfiles: 114
+      md5: 95f99a9b485ce9da028d8f46f78f56dc.dir
+      size: 8695909
+      nfiles: 116
     - path: reports/validation/opensky_validation.json
       hash: md5
       md5: 205b32198ee9d9900ca862ac3faf566a
@@ -113,9 +113,9 @@ stages:
     deps:
     - path: data/processed
       hash: md5
-      md5: b02532709a493396359de03d7663d0b6.dir
-      size: 54641008
-      nfiles: 60
+      md5: 603103ac26a95c23e02ca9fc85bae554.dir
+      size: 54664494
+      nfiles: 61
     - path: params.yaml
       hash: md5
       md5: 519478e154538b9a3b268a5de54f38cb
@@ -149,32 +149,32 @@ stages:
     outs:
     - path: data/reference
       hash: md5
-      md5: 40d430ccebd60ff2e5988630c14a0e0a.dir
-      size: 20320
+      md5: faa08eed1147beaae8b30abf1c160e99.dir
+      size: 11905
       nfiles: 1
     - path: reports/evidently
       hash: md5
-      md5: 07498f19a671471ba287319374673ccd.dir
-      size: 4213095
+      md5: 26cd258b8b10f2bdb00fd50ad72d9514.dir
+      size: 4173195
       nfiles: 2
   train:
     cmd: uv run python main.py train
     deps:
     - path: data/processed
       hash: md5
-      md5: b02532709a493396359de03d7663d0b6.dir
-      size: 54641008
-      nfiles: 60
+      md5: 603103ac26a95c23e02ca9fc85bae554.dir
+      size: 54664494
+      nfiles: 61
     - path: data/reference
       hash: md5
-      md5: 40d430ccebd60ff2e5988630c14a0e0a.dir
-      size: 20320
+      md5: faa08eed1147beaae8b30abf1c160e99.dir
+      size: 11905
       nfiles: 1
     - path: gx/uncommitted
       hash: md5
-      md5: 381de432e941f6b057c153c415ec8a80.dir
-      size: 8595768
-      nfiles: 114
+      md5: 95f99a9b485ce9da028d8f46f78f56dc.dir
+      size: 8695909
+      nfiles: 116
     - path: main.py
       hash: md5
       md5: cba5953349ab3ff01b7d0585dfc8532e
@@ -185,8 +185,8 @@ stages:
       size: 3630
     - path: reports/evidently/opensky_data_drift_summary.json
       hash: md5
-      md5: dafe360e829c94f0cb66150aaaae30ba
-      size: 1548
+      md5: b325df5adbfc3c416d76aeafac525171
+      size: 1560
     - path: reports/validation/opensky_validation.json
       hash: md5
       md5: 205b32198ee9d9900ca862ac3faf566a
@@ -282,42 +282,42 @@ stages:
     outs:
     - path: models/opensky
       hash: md5
-      md5: 564757c5711462a1b8537b03602f910e.dir
-      size: 1255941
+      md5: 43163d524b16a73dc5489f975a45eaf1.dir
+      size: 1255925
       nfiles: 9
     - path: reports/model_compression/opensky_compression.json
       hash: md5
-      md5: f7db893982a30f0940a1f0a3e0dce457
+      md5: 87add872c9f788bfacff287d59f723ea
       size: 8017
     - path: reports/model_explainability/opensky_explainability.json
       hash: md5
-      md5: b84a550f95d042d3c5a7fb9c2cf18066
+      md5: 47f5586adb6a62bf7ebcb86649ddcc95
       size: 14524
     - path: reports/model_training/opensky_metrics.json
       hash: md5
-      md5: 8098c1a66e3f3ab5564b22336611f25c
+      md5: 10b1c5b133a624a77e623ad7b9ea4c9d
       size: 4997
   monitor:
     cmd: uv run python main.py monitor
     deps:
     - path: data/predictions
       hash: md5
-      md5: c10a08bc906f93700e91b054c42db4ae.dir
-      size: 162907
+      md5: f9b92ec323c8d5fac020f611bca9353c.dir
+      size: 95131
       nfiles: 1
     - path: data/processed
       hash: md5
-      md5: b02532709a493396359de03d7663d0b6.dir
-      size: 54641008
-      nfiles: 60
+      md5: 603103ac26a95c23e02ca9fc85bae554.dir
+      size: 54664494
+      nfiles: 61
     - path: main.py
       hash: md5
       md5: cba5953349ab3ff01b7d0585dfc8532e
       size: 4315
     - path: models/opensky
       hash: md5
-      md5: 564757c5711462a1b8537b03602f910e.dir
-      size: 1255941
+      md5: 43163d524b16a73dc5489f975a45eaf1.dir
+      size: 1255925
       nfiles: 9
     - path: params.yaml
       hash: md5
@@ -325,15 +325,15 @@ stages:
       size: 3630
     - path: reports/model_compression/opensky_compression.json
       hash: md5
-      md5: f7db893982a30f0940a1f0a3e0dce457
+      md5: 87add872c9f788bfacff287d59f723ea
       size: 8017
     - path: reports/model_explainability/opensky_explainability.json
       hash: md5
-      md5: b84a550f95d042d3c5a7fb9c2cf18066
+      md5: 47f5586adb6a62bf7ebcb86649ddcc95
       size: 14524
     - path: reports/model_training/opensky_metrics.json
       hash: md5
-      md5: 8098c1a66e3f3ab5564b22336611f25c
+      md5: 10b1c5b133a624a77e623ad7b9ea4c9d
       size: 4997
     - path: src/monitoring/monitor_models.py
       hash: md5
@@ -358,28 +358,28 @@ stages:
     outs:
     - path: reports/deployment/model_deployment_patterns.json
       hash: md5
-      md5: e84211750b418837675e8969f68671fa
+      md5: b8e3f6f088c41f8a4158ce7828d4db9d
       size: 2718
     - path: reports/model_monitoring/production_model_monitoring.json
       hash: md5
-      md5: cfb1a464c5602412fcd52a0c3c8750b4
-      size: 32576
+      md5: 5828a35a6f57647124f8e9f89442c6e2
+      size: 32577
   batch_predict:
     cmd: uv run python main.py predict-batch
     deps:
     - path: data/processed
       hash: md5
-      md5: b02532709a493396359de03d7663d0b6.dir
-      size: 54641008
-      nfiles: 60
+      md5: 603103ac26a95c23e02ca9fc85bae554.dir
+      size: 54664494
+      nfiles: 61
     - path: main.py
       hash: md5
       md5: cba5953349ab3ff01b7d0585dfc8532e
       size: 4315
     - path: models/opensky
       hash: md5
-      md5: 564757c5711462a1b8537b03602f910e.dir
-      size: 1255941
+      md5: 43163d524b16a73dc5489f975a45eaf1.dir
+      size: 1255925
       nfiles: 9
     - path: params.yaml
       hash: md5
@@ -405,6 +405,6 @@ stages:
     outs:
     - path: data/predictions
       hash: md5
-      md5: c10a08bc906f93700e91b054c42db4ae.dir
-      size: 162907
+      md5: f9b92ec323c8d5fac020f611bca9353c.dir
+      size: 95131
       nfiles: 1
