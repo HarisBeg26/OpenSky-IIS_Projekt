@@ -738,7 +738,12 @@ h1 {
   background: rgba(24, 35, 31, 0.04);
   border: 1px solid var(--line);
   border-radius: 16px;
+  color: var(--ink);
   padding: 14px;
+}
+
+.explainability-baselines .metric span {
+  color: var(--muted);
 }
 
 .explainability-grid {
